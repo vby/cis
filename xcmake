@@ -5,6 +5,7 @@ import sys
 import os
 import subprocess
 import argparse
+import shutil
 
 CMAKELISTS = 'CMakeLists.txt'
 CMAKE_MIN_VERSION = '2.6'
@@ -61,9 +62,18 @@ def command_skeleton():
 		os.remove(CMAKELISTS)
 		raise
 
-def command_cmake(args = [], post_args = []):
+
+def do_cmake(args = [], post_args = [], update_if_not=False):
+	no_build_dir = False
 	if not os.path.exists(XCMAKE_ARGS.build_dir):
 		os.makedirs(XCMAKE_ARGS.build_dir)
+		no_build_dir = True
+	if update_if_not and (no_build_dir or not os.listdir(XCMAKE_ARGS.build_dir)):
+		try:
+			command_update()
+		except:	
+			shutil.rmtree(XCMAKE_ARGS.build_dir)
+			raise
 	cmake_argv = ['cmake', '-E', 'chdir', XCMAKE_ARGS.build_dir, 'cmake']
 	if args:
 		cmake_argv += args
@@ -73,20 +83,32 @@ def command_cmake(args = [], post_args = []):
 		cmake_argv += post_args
 	sh_check_call(cmake_argv)
 
-def command_update():
-	command_cmake(post_args=[WORK_DIR])
+def command_cmake():
+	do_cmake()
 
-def command_make():
+def command_update():
+	do_cmake(post_args=[WORK_DIR])
+
+def do_build_target(target=None):
+	cmake_argv = ['--build', XCMAKE_ARGS.build_dir]
+	if target:
+		cmake_argv += ['--target', target]
+	do_cmake(cmake_argv, update_if_not=True)
+
+def command_build():
 	cmake_argv = ['--build', XCMAKE_ARGS.build_dir]
 	if not XCMAKE_ARGS.target:
-		command_cmake(cmake_argv)
-	else:
-		targets = set()
-		for target in XCMAKE_ARGS.target:
-			if target in targets:
-				continue
-			targets.add(target)
-			command_cmake(cmake_argv + ['--target', target])
+		return do_build_target()
+	targets = set()
+	for target in XCMAKE_ARGS.target:
+		if target in targets:
+			continue
+		targets.add(target)
+		do_build_target(target)
+
+def command_make():
+	command_update()
+	command_build(update=True)
 
 def command_clean():
 	if os.path.exists(XCMAKE_ARGS.build_dir):
@@ -110,7 +132,7 @@ def parse_arguments(args):
 	parser.add_argument('--build-dir', metavar='<build-dir>', action=PathAction, default=XCMAKE_ABS_BUILD_DIR, help='Default \'%s\''%(XCMAKE_BUILD_DIR))
 	parser.add_argument('--skeleton', action='store_true', help='Generate %s template'%(CMAKELISTS))
 	parser.add_argument('--update', action='store_true', help='Run cmake generator')
-	parser.add_argument('--build', action='store_true', help='Run cmake build, with --update')
+	parser.add_argument('--build', action='store_true', help='Run cmake build without update')
 	parser.add_argument('--clean', action='store_true', help='Remove <build-dir>')
 	parser.add_argument('--cmake', action='store_true', help='Run cmake in <build-dir>')
 	parser.add_argument('-v', '--version', action='store_true', help='Display version')
@@ -140,10 +162,9 @@ def main():
 	if XCMAKE_ARGS.cmake:
 		return command_cmake()
 	if XCMAKE_ARGS.update:
-		command_update()
-		if XCMAKE_ARGS.build:
-			command_make()
-		return
+		return command_update()
+	if XCMAKE_ARGS.build:
+		return command_build()
 	return command_make()
 
 if __name__ == '__main__':

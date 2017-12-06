@@ -8,7 +8,7 @@ XCMake - CMake Make Interface
 
 * `xcmake --update` Update cmake cache
 
-* `xcmake --update --build ...` Update cmake cache then make [target...]
+* `xcmake --build ...` make [target...] without update 
 
 * `xcmake --clean` Remove <build-dir>
 
