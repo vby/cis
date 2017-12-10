@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-#edit-mode: -*- python -*-
 
 import sys
 import os
@@ -11,13 +10,16 @@ CMAKELISTS = 'CMakeLists.txt'
 CMAKE_MIN_VERSION = '2.6'
 WORK_DIR = os.getcwd()
 
-XCMAKE_BUILD_DIR = 'build_xcmake'
+XCMAKE_BUILD_DIR = os.environ.get('XCMAKE_BUILD_DIR') or 'build_xcmake'
 XCMAKE_ABS_BUILD_DIR = os.path.abspath(XCMAKE_BUILD_DIR)
 XCMAKE_INSTALL_DIR = 'out'
 XCMAKE_PROG = 'xcmake'
 XCMAKE_DESCRIPTION = 'XCMake - CMake Make Interface'
 
 XCMAKE_ARGS = None
+
+class XCMakeError(Exception):
+	pass
 
 def sh_escape(arg):
 	if not arg or arg.find(' ') >= 0:
@@ -87,6 +89,8 @@ def command_cmake():
 	do_cmake()
 
 def command_update():
+	if not os.path.exists(os.path.join(WORK_DIR, CMAKELISTS)):
+		raise XCMakeError('The source directory "%s" does not appear to contain %s.'%(WORK_DIR, CMAKELISTS))
 	do_cmake(post_args=[WORK_DIR])
 
 def do_build_target(target=None):
@@ -175,3 +179,4 @@ if __name__ == '__main__':
 	except Exception, e:
 		sys.stderr.write('%s: %s\n'%(type(e).__name__, str(e)))
 		sys.exit(255)
+
