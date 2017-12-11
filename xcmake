@@ -112,7 +112,7 @@ def command_build():
 
 def command_make():
 	command_update()
-	command_build(update=True)
+	command_build()
 
 def command_clean():
 	if os.path.exists(XCMAKE_ARGS.build_dir):
