@@ -1,4 +1,4 @@
-# xcmake
+# XCMake
 XCMake - CMake Make Interface
 
 ## Usage:

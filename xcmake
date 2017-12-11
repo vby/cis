@@ -27,7 +27,7 @@ def sh_escape(arg):
 	return arg
 
 def sh_check_call(args):
-	subprocess.call(['cmake', '-E', 'cmake_echo_color', '--green', ' '.join((sh_escape(arg) for arg in args))])
+	subprocess.call(['cmake', '-E', 'cmake_echo_color', '--green', '--bold', ' '.join((sh_escape(arg) for arg in args))])
 	subprocess.check_call(args)
 
 def command_version():
