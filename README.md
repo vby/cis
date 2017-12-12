@@ -1,4 +1,4 @@
-# XCMake
+## XCMake
 XCMake - Make frontend for cmake
 
 ## Usage:
@@ -8,11 +8,13 @@ XCMake - Make frontend for cmake
 
 * `xcmake --update` Update or create cmake cache
 
-* `xcmake --make ...` make [target...] without update 
+* `xcmake --build ...` make [target...] without update 
 
-* `xcmake --clean` Remove <build-dir>
+* `xcmake --clean` Remove BUILD_DIR 
 
 * `xcmake --status` Show cache status 
 
-* `xcmake --cmake` Run cmake in <build-dir>
+* `xcmake --show` Show cache entries 
+
+* `xcmake --cmake` Run cmake in BUILD_DIR
 
