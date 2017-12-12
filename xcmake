@@ -120,6 +120,15 @@ def command_cmake():
 
 def command_update(args = None, with_argv=True):
 	argv = ['-H' + XCMAKE_ARGS.directory, '-B' + XCMAKE_ARGS.build_dir]
+	if XCMAKE_ARGS.D:
+		for d in XCMAKE_ARGS.D:
+			argv.append('-D' + d)
+	if XCMAKE_ARGS.generator != None:
+		argv += ['-G', XCMAKE_ARGS.generator]
+	if XCMAKE_ARGS.toolset != None:
+		argv += ['-T', XCMAKE_ARGS.toolset]
+	if XCMAKE_ARGS.platform != None:
+		argv += ['-A', XCMAKE_ARGS.platform]
 	if args:
 		argv += args
 	do_cmake(argv, with_argv=with_argv)
@@ -179,15 +188,18 @@ def command_show(status=False):
 			if not status or (name.startswith('CMAKE_GENERATOR') or name.endswith('_COMMAND') or name.endswith('_DIR') or name.endswith('_DIRECTORY')):
 				internal_entries.append((name, value))
 			continue
-		if status:
-			continue
 		if vtype == 'PATH' or vtype == 'FILEPATH':
 			if value.endswith('-NOTFOUND'):
 				continue
 		if name.startswith('CMAKE_'):
-			cmake_entries.append((name, vtype, value))
+			if status:
+				if name.endswith('_PREFIX'):
+					cmake_entries.append((name, vtype, value))
+			else:
+				cmake_entries.append((name, vtype, value))
 		else:
-			entries.append((name, vtype, value))
+			if not status:
+				entries.append((name, vtype, value))
 	echo_color('INTERNAL:', color='cyan')
 	for name, value in sorted(internal_entries):
 		sys.stdout.write('%s=%s\n'%(name, value))
@@ -222,6 +234,11 @@ def parse_arguments(args):
 	parser.add_argument('-v', '--version', action='store_true', help='Display version and exit')
 	# xcmake
 	parser.add_argument('-B', '--build-dir', action=PathAction, help='Default "%s"(base on -C)'%(XCMAKE_BUILD_DIR))
+	# BUG of parser: '[' in metavar
+	parser.add_argument('-D', metavar='<var>{:<type>}=<value>', action='append', help='Create a cmake cache entry')
+	parser.add_argument('-G', '--generator', help='Specify a build system generator')
+	parser.add_argument('-T', '--toolset', help='Specify toolset name if supported by generator')
+	parser.add_argument('-A', '--platform', help='Specify platform name if supported by generator')
 	parser.add_argument('--scratch', action='store_true', help='Create a %s template'%(CMAKELISTS))
 	parser.add_argument('--update', action='store_true', help='Update or create cmake cache')
 	parser.add_argument('--build', action='store_true', help='Make targets without update')
