@@ -16,7 +16,7 @@ XCMAKE_BUILD_DIR = os.environ.get('XCMAKE_BUILD_DIR') or 'build_xcmake'
 XCMAKE_ABS_BUILD_DIR = os.path.abspath(XCMAKE_BUILD_DIR)
 XCMAKE_INSTALL_DIR = 'out'
 XCMAKE_PROG = 'xcmake'
-XCMAKE_DESCRIPTION = 'XCMake - CMake Make Interface'
+XCMAKE_DESCRIPTION = 'XCMake - Make frontend for cmake'
 
 XCMAKE_ARGS = None
 
@@ -89,8 +89,11 @@ def find_cache_entry(name=None):
 		return entry[0] if entry else ''
 	except:
 		find_cache_entry.entries = {}
+	cmakecache = os.path.join(XCMAKE_ARGS.build_dir, CMAKECACHE)
+	if not os.path.exists(cmakecache):
+		raise XCMakeError('The build directory "%s" does not appear to contain %s.'%(XCMAKE_ARGS.build_dir, CMAKECACHE))
 	entries = find_cache_entry.entries
-	with open(os.path.join(XCMAKE_ARGS.build_dir, CMAKECACHE)) as f:
+	with open(cmakecache) as f:
 		for line in f:
 			line = line.strip()
 			if not line or line.startswith('#') or line.startswith('//'):
@@ -101,7 +104,7 @@ def find_cache_entry(name=None):
 	return find_cache_entry(name)
 
 def command_version():
-	sys.stdout.write('xcmake version %s\n\n'%(XCMAKE_VERSION))
+	sys.stdout.write('%s version %s\n\n'%(XCMAKE_PROG, XCMAKE_VERSION))
 	subp_check_call(['cmake', '--version'], show=False)
 
 def command_scratch():
@@ -144,7 +147,7 @@ def build_native_args():
 		args = [generator_jobs_arg()[1]%(XCMAKE_ARGS.jobs)]
 	return args
 
-def command_build(update=True):
+def command_make(update=True):
 	if update and (not os.path.exists(XCMAKE_ARGS.build_dir) or not os.listdir(XCMAKE_ARGS.build_dir)):
 		command_update(with_argv=False)
 	ddash_args = build_native_args()
@@ -157,9 +160,9 @@ def command_build(update=True):
 		targets.add(target)
 		do_build_target(target, ddash_args)
 
-def command_make():
+def command_make_with_update():
 	command_update(with_argv=False)
-	command_build(update=False)
+	command_make(update=False)
 
 def command_clean():
 	if os.path.exists(XCMAKE_ARGS.build_dir):
@@ -203,16 +206,16 @@ class PathAction(argparse.Action):
 def parse_arguments(args):
 	parser = ArgumentParser(prog=XCMAKE_PROG, description=XCMAKE_DESCRIPTION)
 	parser.add_argument('--build-dir', metavar='<build-dir>', action=PathAction, default=XCMAKE_ABS_BUILD_DIR, help='Default \'%s\''%(XCMAKE_BUILD_DIR))
-	parser.add_argument('--scratch', action='store_true', help='Generate %s template'%(CMAKELISTS))
-	parser.add_argument('--update', action='store_true', help='Run cmake generator')
-	parser.add_argument('--build', action='store_true', help='Run cmake build without update')
+	parser.add_argument('--scratch', action='store_true', help='Create a %s template'%(CMAKELISTS))
+	parser.add_argument('--update', action='store_true', help='Update or create cmake cache')
+	parser.add_argument('--make', action='store_true', help='Make targets without update')
 	parser.add_argument('--clean', action='store_true', help='Remove <build-dir>')
-	parser.add_argument('--status', action='store_true', help='Show cached status')
+	parser.add_argument('--status', action='store_true', help='Show cache status')
 	parser.add_argument('--cmake', action='store_true', help='Run cmake in <build-dir>')
 	# make
 	parser.add_argument('-j', '--jobs', metavar='N', type=int, nargs='?', default=-1, help='Allow N jobs at once; infinite jobs with no arg')
-	parser.add_argument('-v', '--version', action='store_true', help='Display version.')
-	parser.add_argument('target', nargs='*', help='targets of make')
+	parser.add_argument('-v', '--version', action='store_true', help='Display version and exit')
+	parser.add_argument('target', nargs='*', help='Targets to make')
 	# only for help
 	parser.add_argument('--', dest='cmake_argv', metavar='', help='Pass remaining options to cmake')
 
@@ -242,9 +245,9 @@ def main():
 		return command_clean()
 	if XCMAKE_ARGS.update:
 		return command_update()
-	if XCMAKE_ARGS.build:
-		return command_build()
-	return command_make()
+	if XCMAKE_ARGS.make:
+		return command_make()
+	return command_make_with_update()
 
 if __name__ == '__main__':
 	try:

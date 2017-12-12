@@ -1,15 +1,18 @@
 # XCMake
-XCMake - CMake Make Interface
+XCMake - Make frontend for cmake
 
 ## Usage:
 * `xcmake ...` make [target...]
 
-* `xcmake --skeleton` Generate a CMakeLists.txt template
+* `xcmake --scratch` Create a CMakeLists.txt template
 
-* `xcmake --update` Update cmake cache
+* `xcmake --update` Update or create cmake cache
 
-* `xcmake --build ...` make [target...] without update 
+* `xcmake --make ...` make [target...] without update 
 
 * `xcmake --clean` Remove <build-dir>
 
+* `xcmake --status` Show cache status 
+
 * `xcmake --cmake` Run cmake in <build-dir>
+
