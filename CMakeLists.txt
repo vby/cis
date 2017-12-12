@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 2.6)
 
 project(xcmake NONE)
 
-IF (WIN32)
+if(WIN32)
 	install(PROGRAMS xcmake.bat DESTINATION ${CMAKE_INSTALL_PREFIX})
-ELSE ()
+else()
 	install(PROGRAMS xcmake DESTINATION "bin")
-ENDIF ()
+endif()
 

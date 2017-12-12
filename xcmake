@@ -7,6 +7,7 @@ import argparse
 import shutil
 
 CMAKELISTS = 'CMakeLists.txt'
+CMAKECACHE = 'CMakeCache.txt'
 CMAKE_MIN_VERSION = '2.6'
 WORK_DIR = os.getcwd()
 
@@ -29,6 +30,34 @@ def sh_escape(arg):
 def sh_check_call(args):
 	subprocess.call(['cmake', '-E', 'cmake_echo_color', '--green', '--bold', ' '.join((sh_escape(arg) for arg in args))])
 	subprocess.check_call(args)
+
+def do_cmake(args=None, with_argv=True, ddash_args=None):
+	cmake_argv = ['cmake']
+	if args:
+		cmake_argv += args
+	if with_argv and XCMAKE_ARGS.cmake_argv:
+		cmake_argv += XCMAKE_ARGS.cmake_argv
+	if ddash_args:
+		if '--' not in XCMAKE_ARGS.cmake_argv:
+			cmake_argv.append('--')
+		cmake_argv += ddash_args
+	sh_check_call(cmake_argv)
+
+def find_cache_entry(name):
+	try:
+		return find_cache_entry.entries.get(name)
+	except:
+		find_cache_entry.entries = {}
+	entries = find_cache_entry.entries
+	with open(os.path.join(XCMAKE_ARGS.build_dir, CMAKECACHE)) as f:
+		for line in f:
+			line = line.strip()
+			if not line or line.startswith('#') or line.startswith('//'):
+				continue
+			entry, value = line.split('=')
+			ename, vtype = entry.split(':')
+			entries[ename] = (value, vtype)
+	return entries.get(name)
 
 def command_version():
 	sys.stdout.write('%s\n\n'%(XCMAKE_DESCRIPTION))
@@ -64,54 +93,48 @@ def command_scratch():
 		os.remove(cmakelists)
 		raise
 
-
-def do_cmake(args = [], post_args = [], update_if_not=False):
-	no_build_dir = False
-	if not os.path.exists(XCMAKE_ARGS.build_dir):
-		os.makedirs(XCMAKE_ARGS.build_dir)
-		no_build_dir = True
-	if update_if_not and (no_build_dir or not os.listdir(XCMAKE_ARGS.build_dir)):
-		try:
-			command_update()
-		except:	
-			shutil.rmtree(XCMAKE_ARGS.build_dir)
-			raise
-	cmake_argv = ['cmake', '-E', 'chdir', XCMAKE_ARGS.build_dir, 'cmake']
-	if args:
-		cmake_argv += args
-	if XCMAKE_ARGS.cmake_argv:
-		cmake_argv += XCMAKE_ARGS.cmake_argv
-	if post_args:
-		cmake_argv += post_args
-	sh_check_call(cmake_argv)
-
 def command_cmake():
-	do_cmake()
+	do_cmake(['-E', 'chdir', XCMAKE_ARGS.build_dir, 'cmake'])
 
-def command_update():
-	if not os.path.exists(os.path.join(WORK_DIR, CMAKELISTS)):
-		raise XCMakeError('The source directory "%s" does not appear to contain %s.'%(WORK_DIR, CMAKELISTS))
-	do_cmake(post_args=[WORK_DIR])
+def command_update(with_argv=True):
+	do_cmake(['-H' + WORK_DIR, '-B' + XCMAKE_ARGS.build_dir], with_argv=with_argv)
 
-def do_build_target(target=None):
-	cmake_argv = ['--build', XCMAKE_ARGS.build_dir]
+def do_build_target(target=None, ddash_args=None):
+	argv = ['--build', XCMAKE_ARGS.build_dir]
 	if target:
-		cmake_argv += ['--target', target]
-	do_cmake(cmake_argv, update_if_not=True)
+		argv += ['--target', target]
+	do_cmake(argv, ddash_args=ddash_args)
+
+def generator_jobs_arg():
+	gen = find_cache_entry('CMAKE_GENERATOR')
+	if gen:
+		if gen[0].find('Visual Studio') >= 0:
+			return ('/m', '/m:%d')
+	return ('-j', '-j%d')
+
+def build_native_args():
+	args = None
+	if XCMAKE_ARGS.jobs == None: 
+		args = [generator_jobs_arg()[0]]
+	elif XCMAKE_ARGS.jobs >= 0:
+		args = [generator_jobs_arg()[1]%(XCMAKE_ARGS.jobs)]
+	return args
 
 def command_build():
-	cmake_argv = ['--build', XCMAKE_ARGS.build_dir]
+	if not os.path.exists(XCMAKE_ARGS.build_dir) or not os.listdir(XCMAKE_ARGS.build_dir):
+		command_update(with_argv=False)
+	ddash_args = build_native_args()
 	if not XCMAKE_ARGS.target:
-		return do_build_target()
+		return do_build_target(None, ddash_args)
 	targets = set()
 	for target in XCMAKE_ARGS.target:
 		if target in targets:
 			continue
 		targets.add(target)
-		do_build_target(target)
+		do_build_target(target, ddash_args)
 
 def command_make():
-	command_update()
+	command_update(with_argv=False)
 	command_build()
 
 def command_clean():
@@ -139,7 +162,9 @@ def parse_arguments(args):
 	parser.add_argument('--build', action='store_true', help='Run cmake build without update')
 	parser.add_argument('--clean', action='store_true', help='Remove <build-dir>')
 	parser.add_argument('--cmake', action='store_true', help='Run cmake in <build-dir>')
-	parser.add_argument('-v', '--version', action='store_true', help='Display version')
+	# make
+	parser.add_argument('-j', '--jobs', metavar='N', type=int, nargs='?', default=-1, help='Allow N jobs at once; infinite jobs with no arg')
+	parser.add_argument('-v', '--version', action='store_true', help='Display version.')
 	parser.add_argument('target', nargs='*', help='targets of make')
 	# only for help
 	parser.add_argument('--', dest='cmake_argv', metavar='', help='Pass remaining options to cmake')
@@ -157,6 +182,7 @@ def main():
 	parse_arguments(argv[:cmake_argv_idx])
 	setattr(XCMAKE_ARGS, 'cmake_argv', argv[cmake_argv_idx + 1:])
 
+	#print(XCMAKE_ARGS)
 	if XCMAKE_ARGS.version:
 		return command_version()
 	if XCMAKE_ARGS.scratch:
