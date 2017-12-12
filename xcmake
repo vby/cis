@@ -101,12 +101,29 @@ def find_cache_entry(name=None):
 			entries[ename] = (value, vtype)
 	return find_cache_entry(name)
 
+
+def cmake_generators():
+	generators = []
+	try:
+		cmake_help_text = subprocess.check_output(['cmake', '-h']).decode('utf8')
+		g = False 
+		for line in cmake_help_text.splitlines():
+			if g:
+				generators.append(line)
+			elif line.lstrip().startswith('Generators'):
+				g = True
+		
+	except Exception as e:
+		print(e)
+		pass
+	return generators
+
 def command_version():
 	sys.stdout.write('%s version %s\n\n'%(XCMAKE_PROG, XCMAKE_VERSION))
 	subp_check_call(['cmake', '--version'], show=False)
 
 def command_scratch():
-        cmakelists = os.path.abspath(CMAKELISTS)
+	cmakelists = os.path.abspath(CMAKELISTS)
 	if os.path.exists(cmakelists):
 		raise XCMakeError('"%s" exists.'%(cmakelists))
 	try:
@@ -167,7 +184,7 @@ def command_build(update=True):
 		targets.add(target)
 		do_build_target(target, ddash_args)
 
-def command_make_with_update():
+def command_update_build():
 	command_update(with_argv=False)
 	command_build(update=False)
 
@@ -181,7 +198,7 @@ def command_show(status=False):
 	internal_entries = []
 	cmake_entries = []
 	entries = []
-	for name, (value, vtype) in find_cache_entry().iteritems():
+	for name, (value, vtype) in find_cache_entry().items():
 		if not value:
 			continue
 		if vtype == 'INTERNAL':
@@ -226,25 +243,34 @@ class PathAction(argparse.Action):
 		setattr(namespace, self.dest, os.path.abspath(values))
 
 def parse_arguments(args):
-	parser = ArgumentParser(prog=XCMAKE_PROG, description=XCMAKE_DESCRIPTION)
+	parser = ArgumentParser(prog=XCMAKE_PROG, 
+		formatter_class=argparse.RawDescriptionHelpFormatter,
+		description=XCMAKE_DESCRIPTION, 
+		epilog='Generators\n%s'%('\n'.join(cmake_generators())))
 	# make
 	parser.add_argument('target', nargs='*', help='Targets to make')
 	parser.add_argument('-C', '--directory', action=PathAction, help='Change to DIRECTORY before doing anything')
 	parser.add_argument('-j', '--jobs', metavar='N', type=int, nargs='?', default=-1, help='Allow N jobs at once; infinite jobs with no arg')
 	parser.add_argument('-v', '--version', action='store_true', help='Display version and exit')
-	# xcmake
+	# common
 	parser.add_argument('-B', '--build-dir', action=PathAction, help='Default "%s"(base on -C)'%(XCMAKE_BUILD_DIR))
+	# command scratch
+	parser.add_argument('--scratch', action='store_true', help='Create a %s template'%(CMAKELISTS))
+	# command update
+	parser.add_argument('-G', '--update', dest='generator', metavar='GENERATOR', nargs='?', default=False, help='Generate or update cmake cache with GENERATOR')
+	parser.add_argument('-T', '--toolset', help='Specify toolset name if supported by GENERATOR')
+	parser.add_argument('-A', '--platform', help='Specify platform name if supported by GENERATOR')
 	# BUG of parser: '[' in metavar
 	parser.add_argument('-D', metavar='<var>{:<type>}=<value>', action='append', help='Create a cmake cache entry')
-	parser.add_argument('-G', '--generator', help='Specify a build system generator')
-	parser.add_argument('-T', '--toolset', help='Specify toolset name if supported by generator')
-	parser.add_argument('-A', '--platform', help='Specify platform name if supported by generator')
-	parser.add_argument('--scratch', action='store_true', help='Create a %s template'%(CMAKELISTS))
-	parser.add_argument('--update', action='store_true', help='Update or create cmake cache')
-	parser.add_argument('--build', action='store_true', help='Make targets without update')
+	# command build
+	parser.add_argument('--build', action='store_true', help='Make targets')
+	# command clean
 	parser.add_argument('--clean', action='store_true', help='Remove BUILD_DIR')
+	# command status
 	parser.add_argument('--status', action='store_true', help='Show cache status')
+	# command show
 	parser.add_argument('--show', action='store_true', help='Show cache entries')
+	# command cmake
 	parser.add_argument('--cmake', action='store_true', help='Run cmake in BUILD_DIR')
 	# only for help
 	parser.add_argument('--', dest='cmake_argv', metavar='', help='Pass remaining options to cmake')
@@ -263,10 +289,17 @@ def main():
 	argv = sys.argv[1:]
 	cmake_argv_idx = len(argv)
 	try:
-		cmake_argv_idx = argv.index('--')
+		cmake_argv_idx = argv.index('--cmake')
 	except:
 		pass
-	parse_arguments(argv[:cmake_argv_idx])
+	if cmake_argv_idx < len(argv):
+		parse_arguments(argv[:cmake_argv_idx + 1])
+	else:
+		try:
+			cmake_argv_idx = argv.index('--')
+		except:
+			pass
+		parse_arguments(argv[:cmake_argv_idx])
 	setattr(XCMAKE_ARGS, 'cmake_argv', argv[cmake_argv_idx + 1:])
 
 	#print(XCMAKE_ARGS)
@@ -282,20 +315,20 @@ def main():
 		return command_scratch()
 	if XCMAKE_ARGS.clean:
 		return command_clean()
-	if XCMAKE_ARGS.update:
+	if XCMAKE_ARGS.generator != False and XCMAKE_ARGS.build:
+		return command_update_build()
+	if XCMAKE_ARGS.generator != False:
 		return command_update()
-	if XCMAKE_ARGS.build:
-		return command_build()
-	return command_make_with_update()
+	return command_build()
 
 if __name__ == '__main__':
 	try:
 		main()
 	except KeyboardInterrupt:
 		sys.exit(255)
-	except subprocess.CalledProcessError, e:
+	except subprocess.CalledProcessError as e:
 		sys.exit(e.returncode)
-	except Exception, e:
+	except Exception as e:
 		sys.stderr.write('%s: %s\n'%(type(e).__name__, str(e)))
 		sys.exit(254)
 
