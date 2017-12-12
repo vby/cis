@@ -11,6 +11,7 @@ CMAKECACHE = 'CMakeCache.txt'
 CMAKE_MIN_VERSION = '2.6'
 WORK_DIR = os.getcwd()
 
+XCMAKE_VERSION='1.0.0'
 XCMAKE_BUILD_DIR = os.environ.get('XCMAKE_BUILD_DIR') or 'build_xcmake'
 XCMAKE_ABS_BUILD_DIR = os.path.abspath(XCMAKE_BUILD_DIR)
 XCMAKE_INSTALL_DIR = 'out'
@@ -35,13 +36,17 @@ def echo_color(text, color=None, bold=False, newline=True):
 	sys.stderr.flush()
 	subprocess.check_call(cmake_argv)
 
-def sh_escape(arg):
+def subp_escape(arg):
 	if not arg or arg.find(' ') >= 0:
 		return '"%s"'%(arg)
 	return arg
 
-def sh_check_call(args):
-	echo_color(' '.join((sh_escape(arg) for arg in args)), color='green', bold=True)
+def subp_check_call(args, show=True):
+	if show:
+		echo_color(' '.join((subp_escape(arg) for arg in args)), color='green', bold=True)
+	else:
+		sys.stdout.flush()
+		sys.stderr.flush()
 	subprocess.check_call(args)
 
 def do_scratch(cmakelists):
@@ -73,7 +78,7 @@ def do_cmake(args=None, with_argv=True, ddash_args=None):
 		if '--' not in XCMAKE_ARGS.cmake_argv:
 			cmake_argv.append('--')
 		cmake_argv += ddash_args
-	sh_check_call(cmake_argv)
+	subp_check_call(cmake_argv)
 
 def find_cache_entry(name=None):
 	try:
@@ -96,9 +101,8 @@ def find_cache_entry(name=None):
 	return find_cache_entry(name)
 
 def command_version():
-	sys.stdout.write('%s\n\n'%(XCMAKE_DESCRIPTION))
-	cmake_argv = ['cmake', '--version']
-	subprocess.check_call(cmake_argv)
+	sys.stdout.write('xcmake version %s\n\n'%(XCMAKE_VERSION))
+	subp_check_call(['cmake', '--version'], show=False)
 
 def command_scratch():
         cmakelists = os.path.abspath(CMAKELISTS)
@@ -162,7 +166,7 @@ def command_clean():
 		if WORK_DIR == XCMAKE_ARGS.build_dir:
 			sys.stderr.write('Can\'t remove working directory.\n')
 			sys.exit(2)
-	sh_check_call(['cmake', '-E', 'remove_directory', XCMAKE_ARGS.build_dir])
+	subp_check_call(['cmake', '-E', 'remove_directory', XCMAKE_ARGS.build_dir])
 
 def command_status():
 	internal_entries = []
