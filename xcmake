@@ -140,7 +140,7 @@ def command_update(args = None, with_argv=True):
 	if XCMAKE_ARGS.D:
 		for d in XCMAKE_ARGS.D:
 			argv.append('-D' + d)
-	if XCMAKE_ARGS.generator != None:
+	if XCMAKE_ARGS.generator != None and XCMAKE_ARGS.generator != False:
 		argv += ['-G', XCMAKE_ARGS.generator]
 	if XCMAKE_ARGS.toolset != None:
 		argv += ['-T', XCMAKE_ARGS.toolset]

@@ -1,1 +1,1 @@
-@python xcmake %*
+@python %~dp0xcmake %*
