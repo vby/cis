@@ -66,16 +66,16 @@ def do_scratch(cmakelists):
 		f.write('#install(TARGETS %s_shared DESTINATION lib)\n\n'%(project_name))
 		f.write('#install(TARGETS %s_static DESTINATION lib)\n\n'%(project_name))
 
-def do_cmake(args=None, with_argv=True, ddash_args=None):
+def do_cmake(args=None, native_args=None, with_hyphen_argv=True):
 	cmake_argv = ['cmake']
 	if args:
 		cmake_argv += args
-	if with_argv and XCMAKE_ARGS.cmake_argv:
-		cmake_argv += XCMAKE_ARGS.cmake_argv
-	if ddash_args:
+	if with_hyphen_argv and XCMAKE_ARGS.hyphen_argv:
+		cmake_argv += XCMAKE_ARGS.hyphen_argv
+	if native_args:
 		if '--' not in cmake_argv:
 			cmake_argv.append('--')
-		cmake_argv += ddash_args
+		cmake_argv += native_args
 	subp_check_call(cmake_argv)
 
 def find_cache_entry(name=None):
@@ -133,7 +133,7 @@ def command_scratch():
 def command_cmake():
 	do_cmake(['-E', 'chdir', XCMAKE_ARGS.build_dir, 'cmake'])
 
-def command_update(with_argv=True):
+def command_update(with_hyphen_argv=True):
 	argv = ['-H' + XCMAKE_ARGS.directory, '-B' + XCMAKE_ARGS.build_dir]
 	if XCMAKE_ARGS.U:
 		for u in XCMAKE_ARGS.U:
@@ -153,13 +153,13 @@ def command_update(with_argv=True):
 		argv.append('--trace')
 	if XCMAKE_ARGS.debug != False:
 		argv.append('--debug-output')
-	do_cmake(argv, with_argv=with_argv)
+	do_cmake(argv, with_hyphen_argv=with_hyphen_argv)
 
-def do_build_target(target=None, ddash_args=None):
+def do_build_target(target=None, native_args=None):
 	argv = ['--build', XCMAKE_ARGS.build_dir]
 	if target:
 		argv += ['--target', target]
-	do_cmake(argv, ddash_args=ddash_args)
+	do_cmake(argv, native_args=native_args)
 
 def build_native_arg(arg):
 	try:
@@ -173,19 +173,18 @@ def build_native_arg(arg):
 		args['jobs'] = ('/m', '/m:%d')
 		args['trace'] = '/v:d' 
 		args['debug'] = ('/v:diag', lambda x: '/v:diag')
-		args['silent'] = '/v:q'
+		args['silent'] = ('/nologo', '/v:q')
 	else:
 		args['property'] = '%s'
 		args['jobs'] = ('-j', '-j%d')
 		args['trace'] = '--trace' 
 		args['debug'] = ('-d', lambda x: '--debug=%s'%(x))
-		args['silent'] = '-s'
+		args['silent'] = ('-s',)
 	return build_native_arg(arg)
 
 def build_native_args():
 	args = []
 	# properties in targets
-	global XCMAKE_ARGS
 	if XCMAKE_ARGS.target:
 		targets = []
 		for target in XCMAKE_ARGS.target:
@@ -210,24 +209,24 @@ def build_native_args():
 			args.append(build_native_arg('debug')[1](XCMAKE_ARGS.debug))
 	# -s --silent
 	if XCMAKE_ARGS.silent:
-		args.append(build_native_arg('silent'))
+		args.extend(build_native_arg('silent'))
 	return args
 
 def command_build(update=True):
 	if update and (not os.path.exists(XCMAKE_ARGS.build_dir) or not os.listdir(XCMAKE_ARGS.build_dir)):
-		command_update(with_argv=False)
-	ddash_args = build_native_args()
+		command_update(with_hyphen_argv=False)
+	native_args = build_native_args()
 	if not XCMAKE_ARGS.target:
-		return do_build_target(None, ddash_args)
+		return do_build_target(None, native_args)
 	targets = set()
 	for target in XCMAKE_ARGS.target:
 		if target in targets:
 			continue
 		targets.add(target)
-		do_build_target(target, ddash_args)
+		do_build_target(target, native_args)
 
 def command_update_build():
-	command_update(with_argv=False)
+	command_update(with_hyphen_argv=False)
 	command_build(update=False)
 
 def command_clean():
@@ -292,7 +291,50 @@ class PathAction(argparse.Action):
 	def __call__(self, parser, namespace, values, option_string=None):
 		setattr(namespace, self.dest, os.path.abspath(values))
 
-def parse_arguments(args):
+def adjust_arguments(parser, hyphen_argv):
+	# show help
+	if XCMAKE_ARGS.help:
+		command_help(parser)
+	# chdir to --directory
+	if XCMAKE_ARGS.directory:
+		os.chdir(XCMAKE_ARGS.directory)
+	else:
+		XCMAKE_ARGS.directory = os.getcwd()
+	# --debug
+	if XCMAKE_ARGS.debug:
+		if 'n' in XCMAKE_ARGS.debug:
+			XCMAKE_ARGS.debug = False
+			XCMAKE_ARGS.d = False
+	if XCMAKE_ARGS.debug == None or (XCMAKE_ARGS.d and not XCMAKE_ARGS.debug):
+		XCMAKE_ARGS.debug = ''
+	# set --trace for --trace-expand
+	if XCMAKE_ARGS.trace_expand:
+		XCMAKE_ARGS.trace = True
+	# --silent
+	if XCMAKE_ARGS.silent:
+		XCMAKE_ARGS.debug = False
+		XCMAKE_ARGS.trace = False
+		XCMAKE_ARGS.trace_expand = False
+	# set default --build-dir
+	if not XCMAKE_ARGS.build_dir:
+		XCMAKE_ARGS.build_dir = os.path.abspath(XCMAKE_BUILD_DIR)
+	# set --update for -G -T -A -D -U
+	if not XCMAKE_ARGS.update:
+		if XCMAKE_ARGS.generator != None or XCMAKE_ARGS.toolset != None or XCMAKE_ARGS.platform != None or XCMAKE_ARGS.D or XCMAKE_ARGS.U:
+			XCMAKE_ARGS.update = True
+	# set -- //
+	setattr(XCMAKE_ARGS, 'hyphen_argv', hyphen_argv)
+
+def split_arguments(argv):
+	args = [arg if arg != '//' else '--' for arg in argv]
+	hyphen_arg_idx = 0
+	for arg in args:
+		hyphen_arg_idx += 1
+		if arg == '--cmake' or arg == '--':
+			break
+	return (args[:hyphen_arg_idx], args[hyphen_arg_idx:]) 
+
+def parse_arguments(argv):
 	parser = ArgumentParser(prog=XCMAKE_PROG, 
 		formatter_class=argparse.RawDescriptionHelpFormatter,
 		description=XCMAKE_DESCRIPTION, 
@@ -332,58 +374,18 @@ def parse_arguments(args):
 	# command cmake
 	parser.add_argument('--cmake', action='store_true', help='Run cmake in BUILD_DIR')
 	# only for help
-	parser.add_argument('--', dest='cmake_argv', metavar='', help='Pass remaining options to cmake')
+	parser.add_argument('--', dest='hyphen_argv', metavar='or //', help='Pass remaining options to cmake')
 
 	global XCMAKE_ARGS
+
+	args, hyphen_argv = split_arguments(argv)
+
 	XCMAKE_ARGS = parser.parse_args(args)
 
-	# show help
-	if XCMAKE_ARGS.help:
-		command_help(parser)
-	# chdir to --directory
-	if XCMAKE_ARGS.directory:
-		os.chdir(XCMAKE_ARGS.directory)
-	else:
-		XCMAKE_ARGS.directory = os.getcwd()
-	# --debug
-	if XCMAKE_ARGS.debug:
-		if 'n' in XCMAKE_ARGS.debug:
-			XCMAKE_ARGS.debug = False
-			XCMAKE_ARGS.d = False
-	if XCMAKE_ARGS.debug == None or (XCMAKE_ARGS.d and not XCMAKE_ARGS.debug):
-		XCMAKE_ARGS.debug = ''
-	# set --trace for --trace-expand
-	if XCMAKE_ARGS.trace_expand:
-		XCMAKE_ARGS.trace = True
-	# --silent
-	if XCMAKE_ARGS.silent:
-		XCMAKE_ARGS.debug = False
-		XCMAKE_ARGS.trace = False
-		XCMAKE_ARGS.trace_expand = False
-	# set default --build-dir
-	if not XCMAKE_ARGS.build_dir:
-		XCMAKE_ARGS.build_dir = os.path.abspath(XCMAKE_BUILD_DIR)
-	# set --update for -G -T -A -D -U
-	if not XCMAKE_ARGS.update:
-		if XCMAKE_ARGS.generator != None or XCMAKE_ARGS.toolset != None or XCMAKE_ARGS.platform != None or XCMAKE_ARGS.D or XCMAKE_ARGS.U:
-			XCMAKE_ARGS.update = True
+	adjust_arguments(parser, hyphen_argv)
 
 def main():
-	argv = sys.argv[1:]
-	cmake_argv_idx = len(argv)
-	try:
-		cmake_argv_idx = argv.index('--cmake')
-	except:
-		pass
-	if cmake_argv_idx < len(argv):
-		parse_arguments(argv[:cmake_argv_idx + 1])
-	else:
-		try:
-			cmake_argv_idx = argv.index('--')
-		except:
-			pass
-		parse_arguments(argv[:cmake_argv_idx])
-	setattr(XCMAKE_ARGS, 'cmake_argv', argv[cmake_argv_idx + 1:])
+	parse_arguments(sys.argv[1:])
 
 	#print(XCMAKE_ARGS)
 	if XCMAKE_ARGS.version:
