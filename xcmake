@@ -173,16 +173,19 @@ def build_native_arg(arg):
 		args['jobs'] = ('/m', '/m:%d')
 		args['trace'] = '/v:d' 
 		args['debug'] = ('/v:diag', lambda x: '/v:diag')
+		args['silent'] = '/v:q'
 	else:
 		args['property'] = '%s'
 		args['jobs'] = ('-j', '-j%d')
 		args['trace'] = '--trace' 
 		args['debug'] = ('-d', lambda x: '--debug=%s'%(x))
+		args['silent'] = '-s'
 	return build_native_arg(arg)
 
 def build_native_args():
-	global XCMAKE_ARGS
 	args = []
+	# properties in targets
+	global XCMAKE_ARGS
 	if XCMAKE_ARGS.target:
 		targets = []
 		for target in XCMAKE_ARGS.target:
@@ -191,18 +194,23 @@ def build_native_args():
 			else:
 				targets.append(target)
 		XCMAKE_ARGS.target = targets
-				
+	# -j --jobs
 	if XCMAKE_ARGS.jobs == None: 
 		args.append(build_native_arg('jobs')[0])
 	elif XCMAKE_ARGS.jobs >= 0:
 		args.append(build_native_arg('jobs')[1]%(XCMAKE_ARGS.jobs))
-	if XCMAKE_ARGS.trace:	
+	# --trace
+	if XCMAKE_ARGS.trace:
 		args.append(build_native_arg('trace'))
+	# -d --deubg
 	if XCMAKE_ARGS.debug != False:
 		if XCMAKE_ARGS.debug == '':
 			args.append(build_native_arg('debug')[0])
 		else:
 			args.append(build_native_arg('debug')[1](XCMAKE_ARGS.debug))
+	# -s --silent
+	if XCMAKE_ARGS.silent:
+		args.append(build_native_arg('silent'))
 	return args
 
 def command_build(update=True):
@@ -298,6 +306,7 @@ def parse_arguments(args):
 	parser.add_argument('-d', action='store_true', help='Print lots of debugging information')
 	parser.add_argument('--debug', metavar='FLAGS', nargs='?', default=False, help='Print lots of debugging information')
 	parser.add_argument('--trace', action='store_true', help='Print tracing information')
+	parser.add_argument('-s', '--silent', '--quiet', action='store_true', help='Don\'t echo recipes')
 	# cmake extend
 	parser.add_argument('--trace-expand', action='store_true', help='Trace with variable expansion')
 	# common
@@ -346,6 +355,11 @@ def parse_arguments(args):
 	# set --trace for --trace-expand
 	if XCMAKE_ARGS.trace_expand:
 		XCMAKE_ARGS.trace = True
+	# --silent
+	if XCMAKE_ARGS.silent:
+		XCMAKE_ARGS.debug = False
+		XCMAKE_ARGS.trace = False
+		XCMAKE_ARGS.trace_expand = False
 	# set default --build-dir
 	if not XCMAKE_ARGS.build_dir:
 		XCMAKE_ARGS.build_dir = os.path.abspath(XCMAKE_BUILD_DIR)
