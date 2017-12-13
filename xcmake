@@ -73,7 +73,7 @@ def do_cmake(args=None, with_argv=True, ddash_args=None):
 	if with_argv and XCMAKE_ARGS.cmake_argv:
 		cmake_argv += XCMAKE_ARGS.cmake_argv
 	if ddash_args:
-		if '--' not in XCMAKE_ARGS.cmake_argv:
+		if '--' not in cmake_argv:
 			cmake_argv.append('--')
 		cmake_argv += ddash_args
 	subp_check_call(cmake_argv)
@@ -112,9 +112,7 @@ def cmake_generators():
 				generators.append(line)
 			elif line.lstrip().startswith('Generators'):
 				g = True
-		
-	except Exception as e:
-		print(e)
+	except:
 		pass
 	return generators
 
@@ -135,19 +133,26 @@ def command_scratch():
 def command_cmake():
 	do_cmake(['-E', 'chdir', XCMAKE_ARGS.build_dir, 'cmake'])
 
-def command_update(args = None, with_argv=True):
+def command_update(with_argv=True):
 	argv = ['-H' + XCMAKE_ARGS.directory, '-B' + XCMAKE_ARGS.build_dir]
+	if XCMAKE_ARGS.U:
+		for u in XCMAKE_ARGS.U:
+			argv.append('-D' + u)
 	if XCMAKE_ARGS.D:
 		for d in XCMAKE_ARGS.D:
 			argv.append('-D' + d)
-	if XCMAKE_ARGS.generator != None and XCMAKE_ARGS.generator != False:
+	if XCMAKE_ARGS.generator != None:
 		argv += ['-G', XCMAKE_ARGS.generator]
 	if XCMAKE_ARGS.toolset != None:
 		argv += ['-T', XCMAKE_ARGS.toolset]
 	if XCMAKE_ARGS.platform != None:
 		argv += ['-A', XCMAKE_ARGS.platform]
-	if args:
-		argv += args
+	if XCMAKE_ARGS.trace_expand:
+		argv.append('--trace-expand')
+	elif XCMAKE_ARGS.trace:
+		argv.append('--trace')
+	if XCMAKE_ARGS.debug != False:
+		argv.append('--debug-output')
 	do_cmake(argv, with_argv=with_argv)
 
 def do_build_target(target=None, ddash_args=None):
@@ -156,19 +161,48 @@ def do_build_target(target=None, ddash_args=None):
 		argv += ['--target', target]
 	do_cmake(argv, ddash_args=ddash_args)
 
-def generator_jobs_arg():
+def build_native_arg(arg):
+	try:
+		return build_native_arg.args.get(arg)
+	except:
+		build_native_arg.args = {}
+	args = build_native_arg.args
 	gen = find_cache_entry('CMAKE_GENERATOR')
-	if gen:
-		if gen.find('Visual Studio') >= 0:
-			return ('/m', '/m:%d')
-	return ('-j', '-j%d')
+	if gen and gen.find('Visual Studio') >= 0:
+		args['property'] = '/p:%s'
+		args['jobs'] = ('/m', '/m:%d')
+		args['trace'] = '/v:d' 
+		args['debug'] = ('/v:diag', lambda x: '/v:diag')
+	else:
+		args['property'] = '%s'
+		args['jobs'] = ('-j', '-j%d')
+		args['trace'] = '--trace' 
+		args['debug'] = ('-d', lambda x: '--debug=%s'%(x))
+	return build_native_arg(arg)
 
 def build_native_args():
-	args = None
+	global XCMAKE_ARGS
+	args = []
+	if XCMAKE_ARGS.target:
+		targets = []
+		for target in XCMAKE_ARGS.target:
+			if '=' in target:
+				args.append(build_native_arg('property')%(target))
+			else:
+				targets.append(target)
+		XCMAKE_ARGS.target = targets
+				
 	if XCMAKE_ARGS.jobs == None: 
-		args = [generator_jobs_arg()[0]]
+		args.append(build_native_arg('jobs')[0])
 	elif XCMAKE_ARGS.jobs >= 0:
-		args = [generator_jobs_arg()[1]%(XCMAKE_ARGS.jobs)]
+		args.append(build_native_arg('jobs')[1]%(XCMAKE_ARGS.jobs))
+	if XCMAKE_ARGS.trace:	
+		args.append(build_native_arg('trace'))
+	if XCMAKE_ARGS.debug != False:
+		if XCMAKE_ARGS.debug == '':
+			args.append(build_native_arg('debug')[0])
+		else:
+			args.append(build_native_arg('debug')[1](XCMAKE_ARGS.debug))
 	return args
 
 def command_build(update=True):
@@ -232,10 +266,18 @@ def command_show(status=False):
 def command_status():
 	command_show(status=True)
 
+def print_help(parser, fd=sys.stdout):
+	parser.print_help()
+	fd.write('\nGenerators\n%s\n'%('\n'.join(cmake_generators())))
+
+def command_help(parser):
+	print_help(parser)
+	sys.exit(0)
+
 class ArgumentParser(argparse.ArgumentParser):
 	def error(self, message):
 		sys.stderr.write('%s: %s\n\n'%(self.prog, message))
-		self.print_help(sys.stderr)
+		print_help(self, sys.stderr)
 		self.exit(1)
 
 class PathAction(argparse.Action):
@@ -246,22 +288,30 @@ def parse_arguments(args):
 	parser = ArgumentParser(prog=XCMAKE_PROG, 
 		formatter_class=argparse.RawDescriptionHelpFormatter,
 		description=XCMAKE_DESCRIPTION, 
-		epilog='Generators\n%s'%('\n'.join(cmake_generators())))
+		add_help=False)
 	# make
 	parser.add_argument('target', nargs='*', help='Targets to make')
 	parser.add_argument('-C', '--directory', action=PathAction, help='Change to DIRECTORY before doing anything')
 	parser.add_argument('-j', '--jobs', metavar='N', type=int, nargs='?', default=-1, help='Allow N jobs at once; infinite jobs with no arg')
 	parser.add_argument('-v', '--version', action='store_true', help='Display version and exit')
+	parser.add_argument('-h', '--help', action='store_true', help='Print this message and exit')
+	parser.add_argument('-d', action='store_true', help='Print lots of debugging information')
+	parser.add_argument('--debug', metavar='FLAGS', nargs='?', default=False, help='Print lots of debugging information')
+	parser.add_argument('--trace', action='store_true', help='Print tracing information')
+	# cmake extend
+	parser.add_argument('--trace-expand', action='store_true', help='Trace with variable expansion')
 	# common
 	parser.add_argument('-B', '--build-dir', action=PathAction, help='Default "%s"(base on -C)'%(XCMAKE_BUILD_DIR))
 	# command scratch
 	parser.add_argument('--scratch', action='store_true', help='Create a %s template'%(CMAKELISTS))
 	# command update
-	parser.add_argument('-G', '--update', dest='generator', metavar='GENERATOR', nargs='?', default=False, help='Generate or update cmake cache with GENERATOR')
+	parser.add_argument('--update', action='store_true', help='Create or update cmake cache')
+	parser.add_argument('-G', '--generator', help='Specify a build system generator')
 	parser.add_argument('-T', '--toolset', help='Specify toolset name if supported by GENERATOR')
 	parser.add_argument('-A', '--platform', help='Specify platform name if supported by GENERATOR')
 	# BUG of parser: '[' in metavar
 	parser.add_argument('-D', metavar='<var>{:<type>}=<value>', action='append', help='Create a cmake cache entry')
+	parser.add_argument('-U', metavar='<globbing_expr>', action='append', help='Remove matching entries from CMake cache')
 	# command build
 	parser.add_argument('--build', action='store_true', help='Make targets')
 	# command clean
@@ -278,12 +328,31 @@ def parse_arguments(args):
 	global XCMAKE_ARGS
 	XCMAKE_ARGS = parser.parse_args(args)
 
+	# show help
+	if XCMAKE_ARGS.help:
+		command_help(parser)
+	# chdir to --directory
 	if XCMAKE_ARGS.directory:
 		os.chdir(XCMAKE_ARGS.directory)
 	else:
 		XCMAKE_ARGS.directory = os.getcwd()
+	# --debug
+	if XCMAKE_ARGS.debug:
+		if 'n' in XCMAKE_ARGS.debug:
+			XCMAKE_ARGS.debug = False
+			XCMAKE_ARGS.d = False
+	if XCMAKE_ARGS.debug == None or (XCMAKE_ARGS.d and not XCMAKE_ARGS.debug):
+		XCMAKE_ARGS.debug = ''
+	# set --trace for --trace-expand
+	if XCMAKE_ARGS.trace_expand:
+		XCMAKE_ARGS.trace = True
+	# set default --build-dir
 	if not XCMAKE_ARGS.build_dir:
 		XCMAKE_ARGS.build_dir = os.path.abspath(XCMAKE_BUILD_DIR)
+	# set --update for -G -T -A -D -U
+	if not XCMAKE_ARGS.update:
+		if XCMAKE_ARGS.generator != None or XCMAKE_ARGS.toolset != None or XCMAKE_ARGS.platform != None or XCMAKE_ARGS.D or XCMAKE_ARGS.U:
+			XCMAKE_ARGS.update = True
 
 def main():
 	argv = sys.argv[1:]
@@ -315,9 +384,9 @@ def main():
 		return command_scratch()
 	if XCMAKE_ARGS.clean:
 		return command_clean()
-	if XCMAKE_ARGS.generator != False and XCMAKE_ARGS.build:
+	if XCMAKE_ARGS.update and XCMAKE_ARGS.build:
 		return command_update_build()
-	if XCMAKE_ARGS.generator != False:
+	if XCMAKE_ARGS.update:
 		return command_update()
 	return command_build()
 
