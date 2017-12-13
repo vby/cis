@@ -336,6 +336,7 @@ def split_arguments(argv):
 
 def parse_arguments(argv):
 	parser = ArgumentParser(prog=XCMAKE_PROG, 
+		prefix_chars='-/',
 		formatter_class=argparse.RawDescriptionHelpFormatter,
 		description=XCMAKE_DESCRIPTION, 
 		add_help=False)
