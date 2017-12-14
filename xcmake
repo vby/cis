@@ -21,30 +21,38 @@ XCMAKE_ARGS = None
 class XCMakeError(Exception):
 	pass
 
-def echo_color(text, color=None, bold=False, newline=True):
-	cmake_argv = ['cmake', '-E', 'cmake_echo_color']
-	if color:
-		cmake_argv.append('--%s'%(color))
-	if bold:
-		cmake_argv.append('--bold')
-	if not newline:
-		cmake_argv.append('--no-newline')
-	cmake_argv.append(text)
-	sys.stdout.flush()
-	sys.stderr.flush()
-	subprocess.check_call(cmake_argv)
+# https://en.wikipedia.org/wiki/ANSI_escape_code
+def ansi_SGR(*attrs):
+	def Ps(attr):
+		if not hasattr(Ps, 'attributes'):
+			Ps.attributes = {
+				'normal':0, 'bold':1, 'faint':2, 'italic':3, 'underline':4, 'blink':5, 'inverse':7, 'conceal':8, 'crossed-out':9,
+				'black':30, 'red':31, 'green':32, 'orange':33, 'blue':34, 'purple':35, 'cyan':36, 'white':37, 'default':39,
+			}
+		return Ps.attributes[attr] if not attr.startswith('bg-') else Ps.attributes[attr[3:]] + 10
+	return '\x1b[%sm'%(';'.join((str(Ps(attr)) for attr in attrs)) if attrs else '0')
+
+def print_color(text, end='\n', file=sys.stdout, flush=False, color=None, attrs=()):
+	if (color or attrs) and file.isatty():
+		sgr = ansi_SGR(color, *attrs) if color else ansi_SGR(*attrs)
+		file.write('%s%s%s'%(sgr, text, ansi_SGR()))
+	else:
+		file.write(text)
+	if end:
+		file.write(end)
+	if flush:
+		file.flush()
 
 def subp_escape(arg):
-	if not arg or arg.find(' ') >= 0:
+	if not arg or ' ' in arg:
 		return '"%s"'%(arg)
 	return arg
 
-def subp_check_call(args, show=True):
-	if show:
-		echo_color(' '.join((subp_escape(arg) for arg in args)), color='green', bold=True)
-	else:
-		sys.stdout.flush()
-		sys.stderr.flush()
+def subp_check_call(args, echo=True):
+	if echo:
+		print_color(' '.join((subp_escape(arg) for arg in args)), color='green', attrs=('bold',))
+	sys.stdout.flush()
+	sys.stderr.flush()
 	subprocess.check_call(args)
 
 def do_scratch(cmakelists):
@@ -79,18 +87,16 @@ def do_cmake(args=None, native_args=None, with_hyphen_argv=True):
 	subp_check_call(cmake_argv)
 
 def find_cache_entry(name=None):
-	try:
+	if hasattr(find_cache_entry, 'entries'):
 		entries = find_cache_entry.entries
 		if name == None:
 			return entries 
 		entry = entries.get(name)
 		return entry[0] if entry else ''
-	except:
-		find_cache_entry.entries = {}
 	cmakecache = os.path.join(XCMAKE_ARGS.build_dir, CMAKECACHE)
 	if not os.path.exists(cmakecache):
 		raise XCMakeError('The build directory "%s" does not appear to contain %s.'%(XCMAKE_ARGS.build_dir, CMAKECACHE))
-	entries = find_cache_entry.entries
+	entries = {}
 	with open(cmakecache) as f:
 		for line in f:
 			line = line.strip()
@@ -99,6 +105,7 @@ def find_cache_entry(name=None):
 			entry, value = line.split('=')
 			ename, vtype = entry.split(':')
 			entries[ename] = (value, vtype)
+	find_cache_entry.entries = entries
 	return find_cache_entry(name)
 
 
@@ -118,7 +125,7 @@ def cmake_generators():
 
 def command_version():
 	sys.stdout.write('%s version %s\n\n'%(XCMAKE_PROG, XCMAKE_VERSION))
-	subp_check_call(['cmake', '--version'], show=False)
+	subp_check_call(['cmake', '--version'], echo=False)
 
 def command_scratch():
 	cmakelists = os.path.abspath(CMAKELISTS)
@@ -133,7 +140,7 @@ def command_scratch():
 def command_cmake():
 	do_cmake(['-E', 'chdir', XCMAKE_ARGS.build_dir, 'cmake'])
 
-def command_update(with_hyphen_argv=True):
+def do_update(with_hyphen_argv=True):
 	argv = ['-H' + XCMAKE_ARGS.directory, '-B' + XCMAKE_ARGS.build_dir]
 	if XCMAKE_ARGS.U:
 		for u in XCMAKE_ARGS.U:
@@ -155,6 +162,9 @@ def command_update(with_hyphen_argv=True):
 		argv.append('--debug-output')
 	do_cmake(argv, with_hyphen_argv=with_hyphen_argv)
 
+def command_update():
+	do_update(with_hyphen_argv=True)
+
 def do_build_target(target=None, native_args=None):
 	argv = ['--build', XCMAKE_ARGS.build_dir]
 	if target:
@@ -162,11 +172,9 @@ def do_build_target(target=None, native_args=None):
 	do_cmake(argv, native_args=native_args)
 
 def build_native_arg(arg):
-	try:
+	if hasattr(build_native_arg, 'args'):
 		return build_native_arg.args.get(arg)
-	except:
-		build_native_arg.args = {}
-	args = build_native_arg.args
+	args = {}
 	gen = find_cache_entry('CMAKE_GENERATOR')
 	if gen and gen.find('Visual Studio') >= 0:
 		args['property'] = '/p:%s'
@@ -180,6 +188,7 @@ def build_native_arg(arg):
 		args['trace'] = '--trace' 
 		args['debug'] = ('-d', lambda x: '--debug=%s'%(x))
 		args['silent'] = ('-s',)
+	build_native_arg.args = args
 	return build_native_arg(arg)
 
 def build_native_args():
@@ -213,8 +222,8 @@ def build_native_args():
 	return args
 
 def command_build(update=True):
-	if update and (not os.path.exists(XCMAKE_ARGS.build_dir) or not os.listdir(XCMAKE_ARGS.build_dir)):
-		command_update(with_hyphen_argv=False)
+	if update and not os.path.exists(os.path.join(XCMAKE_ARGS.build_dir, CMAKECACHE)):
+		do_update(with_hyphen_argv=False)
 	native_args = build_native_args()
 	if not XCMAKE_ARGS.target:
 		return do_build_target(None, native_args)
@@ -226,7 +235,7 @@ def command_build(update=True):
 		do_build_target(target, native_args)
 
 def command_update_build():
-	command_update(with_hyphen_argv=False)
+	do_update(with_hyphen_argv=False)
 	command_build(update=False)
 
 def command_clean():
@@ -258,15 +267,15 @@ def command_show(status=False):
 		else:
 			if not status:
 				entries.append((name, vtype, value))
-	echo_color('INTERNAL:', color='cyan')
+	print_color('INTERNAL:', color='cyan')
 	for name, value in sorted(internal_entries):
 		sys.stdout.write('%s=%s\n'%(name, value))
 	if cmake_entries:
-		echo_color('EXTERNAL-CMAKE:', color='cyan')
+		print_color('EXTERNAL-CMAKE:', color='cyan')
 		for name, vtype, value in sorted(cmake_entries):
 			sys.stdout.write('%s:%s=%s\n'%(name, vtype, value))
 	if entries:
-		echo_color('EXTERNAL:', color='cyan')
+		print_color('EXTERNAL:', color='cyan')
 		for name, vtype, value in sorted(entries):
 			sys.stdout.write('%s:%s=%s\n'%(name, vtype, value))
 
@@ -344,12 +353,12 @@ def parse_arguments(argv):
 	parser.add_argument('target', nargs='*', help='Targets to make')
 	parser.add_argument('-C', '--directory', action=PathAction, help='Change to DIRECTORY before doing anything')
 	parser.add_argument('-j', '--jobs', metavar='N', type=int, nargs='?', default=-1, help='Allow N jobs at once; infinite jobs with no arg')
-	parser.add_argument('-v', '--version', action='store_true', help='Display version and exit')
-	parser.add_argument('-h', '--help', action='store_true', help='Print this message and exit')
+	parser.add_argument('-h', '--help', '/?', action='store_true', help='Print this message and exit')
 	parser.add_argument('-d', action='store_true', help='Print lots of debugging information')
-	parser.add_argument('--debug', metavar='FLAGS', nargs='?', default=False, help='Print lots of debugging information')
+	parser.add_argument('--debug', metavar='FLAGS', nargs='?', default=False, help='Print various types of debugging information')
 	parser.add_argument('--trace', action='store_true', help='Print tracing information')
 	parser.add_argument('-s', '--silent', '--quiet', action='store_true', help='Don\'t echo recipes')
+	parser.add_argument('-v', '--version', '/V', action='store_true', help='Print the version number of xcmake and exit')
 	# cmake extend
 	parser.add_argument('--trace-expand', action='store_true', help='Trace with variable expansion')
 	# common

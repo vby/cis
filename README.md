@@ -8,7 +8,7 @@ XCMake - Make frontend for cmake
 
 * `xcmake --update` Update or create cmake cache
 
-* `xcmake --build ...` make [target...] without update 
+* `xcmake --update --build ...` Update before make [target...] 
 
 * `xcmake --clean` Remove BUILD_DIR 
 
