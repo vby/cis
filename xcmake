@@ -22,21 +22,13 @@ XCMAKE_ARGS = None
 class XCMakeError(Exception):
 	pass
 
-# https://en.wikipedia.org/wiki/ANSI_escape_code
-def ansi_SGR(*attrs):
-	def Ps(attr):
-		if not hasattr(Ps, 'attributes'):
-			Ps.attributes = {
-				'normal':0, 'bold':1, 'faint':2, 'italic':3, 'underline':4, 'blink':5, 'inverse':7, 'conceal':8, 'crossed-out':9,
-				'black':30, 'red':31, 'green':32, 'orange':33, 'blue':34, 'purple':35, 'cyan':36, 'white':37, 'default':39,
-			}
-		return Ps.attributes[attr] if not attr.startswith('bg-') else Ps.attributes[attr[3:]] + 10
-	return '\x1b[%sm'%(';'.join((str(Ps(attr)) for attr in attrs)) if attrs else '0')
-
-def print_color(text, end='\n', file=sys.stdout, flush=False, color=None, attrs=()):
-	if (color or attrs) and file.isatty():
-		sgr = ansi_SGR(color, *attrs) if color else ansi_SGR(*attrs)
-		file.write('%s%s%s'%(sgr, text, ansi_SGR()))
+def print_color(text, end='\n', file=sys.stdout, flush=False, attrs=None):
+	if attrs:
+		argv = ['cmake', '-E', 'cmake_echo_color', '--no-newline']
+		argv += ('--%s'%(attr.strip()) for attr in attrs.split(','))
+		argv.append(text)
+		file.flush()
+		subprocess.check_call(argv, stdout=file)
 	else:
 		file.write(text)
 	if end:
@@ -51,7 +43,7 @@ def subp_escape(arg):
 
 def subp_check_call(args, output=False, echo=True):
 	if echo:
-		print_color(' '.join((subp_escape(arg) for arg in args)), color='green', attrs=('bold',))
+		print_color(' '.join((subp_escape(arg) for arg in args)), attrs='green,bold')
 	sys.stdout.flush()
 	sys.stderr.flush()
 	if output:
@@ -271,15 +263,15 @@ def command_show(status=False):
 		else:
 			if not status:
 				entries.append((name, vtype, value))
-	print_color('INTERNAL:', color='cyan')
+	print_color('INTERNAL:', attrs='cyan')
 	for name, value in sorted(internal_entries):
 		sys.stdout.write('%s=%s\n'%(name, value))
 	if cmake_entries:
-		print_color('EXTERNAL-CMAKE:', color='cyan')
+		print_color('EXTERNAL-CMAKE:', attrs='cyan')
 		for name, vtype, value in sorted(cmake_entries):
 			sys.stdout.write('%s:%s=%s\n'%(name, vtype, value))
 	if entries:
-		print_color('EXTERNAL:', color='cyan')
+		print_color('EXTERNAL:', attrs='cyan')
 		for name, vtype, value in sorted(entries):
 			sys.stdout.write('%s:%s=%s\n'%(name, vtype, value))
 
