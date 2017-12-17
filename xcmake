@@ -108,14 +108,14 @@ def find_cache_entry(name=None):
 def cmake_generators():
 	generators = []
 	try:
-		cmake_help_text = do_cmake(('-h',), output=True, echo=False).decode('utf8')
+		cmake_help_text = do_cmake(('-h',), with_hyphen_argv=False, output=True, echo=False).decode('utf8')
 		g = False 
 		for line in cmake_help_text.splitlines():
 			if g:
 				generators.append(line)
 			elif line.lstrip().startswith('Generators'):
 				g = True
-	except:
+	except Exception as e:
 		pass
 	return generators
 
@@ -161,8 +161,10 @@ def do_update(with_hyphen_argv=True):
 def command_update():
 	do_update(with_hyphen_argv=True)
 
-def do_build_target(target=None, native_args=None):
+def do_build_target(target=None, args=None, native_args=None):
 	argv = ['--build', XCMAKE_BUILD_DIR]
+	if args:
+		argv += args
 	if target:
 		argv += ['--target', target]
 	do_cmake(argv, native_args=native_args)
@@ -220,15 +222,22 @@ def build_native_args():
 def command_build(update=True):
 	if update and not os.path.exists(os.path.join(XCMAKE_BUILD_DIR, CMAKECACHE)):
 		do_update(with_hyphen_argv=False)
+	args = None
+	if XCMAKE_ARGS.config:
+		args = ['--config', XCMAKE_ARGS.config] 
+	else:
+		build_type = find_cache_entry('CMAKE_BUILD_TYPE')
+		if build_type:
+			args = ['--config', build_type] 
 	native_args = build_native_args()
 	if not XCMAKE_ARGS.target:
-		return do_build_target(None, native_args)
+		return do_build_target(None, args, native_args)
 	targets = set()
 	for target in XCMAKE_ARGS.target:
 		if target in targets:
 			continue
 		targets.add(target)
-		do_build_target(target, native_args)
+		do_build_target(target, args, native_args)
 
 def command_update_build():
 	do_update(with_hyphen_argv=False)
@@ -385,6 +394,7 @@ def parse_arguments(argv):
 	parser.add_argument('-U', metavar='<globbing_expr>', action='append', help='Remove matching entries from CMake cache')
 	# command build
 	parser.add_argument('--build', action='store_true', help='Make targets')
+	parser.add_argument('--config', help='For multi-configuration tools, choose CONFIG')
 	# command clean
 	parser.add_argument('--clean', action='store_true', help='Remove BUILD_DIR')
 	# command status
