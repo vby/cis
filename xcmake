@@ -298,8 +298,7 @@ def command_help(parser):
 
 class ArgumentParser(argparse.ArgumentParser):
 	def error(self, message):
-		sys.stderr.write('%s: %s\n\n'%(self.prog, message))
-		print_help(self, sys.stderr)
+		sys.stderr.write('%s: %s\nSpecify --help or -h or /? for usage\n'%(self.prog, message))
 		self.exit(1)
 
 class PathAction(argparse.Action):
