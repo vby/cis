@@ -75,8 +75,8 @@ def xcmake_directory():
 	return XCMAKE_ARGS.directory
 
 def xcmake_build_directory():
-	if not os.path.dirname(XCMAKE_ARGS.build_dir):
-		XCMAKE_ARGS.build_dir = os.path.normpath(os.path.join(xcmake_directory(), XCMAKE_ARGS.build_dir))
+	if not XCMAKE_ARGS.build_dir:
+		XCMAKE_ARGS.build_dir = os.path.normpath(os.path.join(xcmake_directory(), XCMAKE.BUILD_DIR))
 	return XCMAKE_ARGS.build_dir
 
 def xcmake_cmakelists():
@@ -107,11 +107,10 @@ project(%(proj)s)\n
 			'xcmake_name': XCMAKE.NAME,
 			'min_ver': XCMAKE.CMAKE_MIN_VERSION,
 			'proj': project_name,
-			'build_dir': XCMAKE.BUILD_DIR,
 		})
 
 def do_cmake(args=None, output=False, echo=True, native_args=None, with_hyphen_argv=True):
-	cmake_argv = [CMAKE_COMMAND]
+	cmake_argv = [XCMAKE_ARGS.cmake_command]
 	if args:
 		cmake_argv += args
 	if with_hyphen_argv and XCMAKE_ARGS.hyphen_argv:
@@ -176,7 +175,7 @@ def command_scratch():
 		raise
 
 def command_cmake():
-	do_cmake(['-E', 'chdir', xcmake_build_directory(), CMAKE_COMMAND])
+	do_cmake(['-E', 'chdir', xcmake_build_directory(), XCMAKE_ARGS.cmake_command])
 
 def do_update(with_hyphen_argv=True):
 	argv = ['-H' + xcmake_directory(), '-B' + xcmake_build_directory()]
@@ -373,9 +372,6 @@ def adjust_arguments(parser, hyphen_argv):
 		XCMAKE_ARGS.debug = False
 		XCMAKE_ARGS.trace = False
 		XCMAKE_ARGS.trace_expand = False
-	# set --cmake-command
-	global CMAKE_COMMAND
-	CMAKE_COMMAND = XCMAKE_ARGS.cmake_command
 	# set --update for -G -T -A -D -U
 	if not XCMAKE_ARGS.update:
 		if XCMAKE_ARGS.generator != None or XCMAKE_ARGS.toolset != None or XCMAKE_ARGS.platform != None or XCMAKE_ARGS.D or XCMAKE_ARGS.U:
@@ -412,7 +408,7 @@ def parse_arguments(argv):
 	parser.add_argument('--trace-expand', action='store_true', help='Trace with variable expansion')
 	# common
 	parser.add_argument('-c', '--cmake-command', action=PathOrNameAction, default=CMAKE_COMMAND, help='Default "%s"'%(CMAKE_COMMAND))
-	parser.add_argument('-b', '--build-dir', action=PathOrNameAction, default=XCMAKE.BUILD_DIR, help='Default "%s"'%(XCMAKE.BUILD_DIR))
+	parser.add_argument('-b', '--build-dir', action=PathAction, help='Default DIRECTORY/"%s"'%(XCMAKE.BUILD_DIR))
 	# command scratch
 	parser.add_argument('--scratch', action='store_true', help='Create a %s template'%(CMAKELISTS))
 	# command update
