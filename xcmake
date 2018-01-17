@@ -85,6 +85,33 @@ def xcmake_cmakelists():
 def xcmake_cmakecache():
 	return os.path.join(xcmake_build_directory(), CMAKECACHE)
 
+def split_cmake_cache_entry(entry):
+	nametype, value = entry.split('=')
+	name_type = nametype.split(':')
+	vtype = name_type[1].strip() if len(name_type) > 1 else None
+	return (name_type[0].strip(), vtype, value.strip())
+
+def find_cmake_cache_entries(name=None):
+	if hasattr(find_cmake_cache_entries, 'entries'):
+		entries = find_cmake_cache_entries.entries
+		if name == None:
+			return entries 
+		entry = entries.get(name)
+		return entry[0] if entry else ''
+	cmakecache = xcmake_cmakecache()
+	if not os.path.exists(cmakecache):
+		raise XCMakeError('The build directory "%s" does not appear to contain %s.'%(xcmake_build_directory(), CMAKECACHE))
+	entries = {}
+	with open(cmakecache) as f:
+		for line in f:
+			line = line.strip()
+			if not line or line.startswith('#') or line.startswith('//'):
+				continue
+			ename, vtype, value = split_cmake_cache_entry(line)
+			entries[ename] = (value, vtype)
+	find_cmake_cache_entries.entries = entries
+	return find_cmake_cache_entries(name)
+
 def do_scratch(cmakelists):
 	project_name = os.path.basename(xcmake_directory())
 	with open(cmakelists, 'w') as f:
@@ -120,28 +147,6 @@ def do_cmake(args=None, output=False, echo=True, native_args=None, with_hyphen_a
 			cmake_argv.append('--')
 		cmake_argv += native_args
 	return subp_check_call(cmake_argv, output, echo)
-
-def find_cache_entry(name=None):
-	if hasattr(find_cache_entry, 'entries'):
-		entries = find_cache_entry.entries
-		if name == None:
-			return entries 
-		entry = entries.get(name)
-		return entry[0] if entry else ''
-	cmakecache = xcmake_cmakecache()
-	if not os.path.exists(cmakecache):
-		raise XCMakeError('The build directory "%s" does not appear to contain %s.'%(xcmake_build_directory(), CMAKECACHE))
-	entries = {}
-	with open(cmakecache) as f:
-		for line in f:
-			line = line.strip()
-			if not line or line.startswith('#') or line.startswith('//'):
-				continue
-			entry, value = line.split('=')
-			ename, vtype = entry.split(':')
-			entries[ename] = (value, vtype)
-	find_cache_entry.entries = entries
-	return find_cache_entry(name)
 
 def cmake_generators():
 	generators = []
@@ -182,9 +187,17 @@ def do_update(with_hyphen_argv=True):
 	if XCMAKE.ARGS.U:
 		for u in XCMAKE.ARGS.U:
 			argv.append('-D' + u)
+	#argv.append('-DXCMAKE_COMMAND:INTERNAL=' + XCMAKE.COMMAND)
+	cmake_module_path = ([], None)
 	if XCMAKE.ARGS.D:
 		for d in XCMAKE.ARGS.D:
+			name, vtype, value = split_cmake_cache_entry(d)
+			if name == 'CMAKE_MODULE_PATH':
+				cmake_module_path = (value, vtype)
+				continue
 			argv.append('-D' + d)
+	cmake_module_path[0].append(os.path.dirname(XCMAKE.COMMAND))
+	argv.append('-DCMAKE_MODULE_PATH%s=%s'%(':' + cmake_module_path[1] if cmake_module_path[1] else '', ';'.join(cmake_module_path[0])))
 	if XCMAKE.ARGS.generator != None:
 		argv += ['-G', XCMAKE.ARGS.generator]
 	if XCMAKE.ARGS.toolset != None:
@@ -214,7 +227,7 @@ def build_native_arg(arg):
 	if hasattr(build_native_arg, 'args'):
 		return build_native_arg.args.get(arg)
 	args = {}
-	gen = find_cache_entry('CMAKE_GENERATOR')
+	gen = find_cmake_cache_entries('CMAKE_GENERATOR')
 	if gen and gen.find('Visual Studio') >= 0:
 		args['property'] = '/p:%s'
 		args['jobs'] = ('/m', '/m:%d')
@@ -267,7 +280,7 @@ def command_build(update=True):
 	if XCMAKE.ARGS.config:
 		args = ['--config', XCMAKE.ARGS.config] 
 	else:
-		build_type = find_cache_entry('CMAKE_BUILD_TYPE')
+		build_type = find_cmake_cache_entries('CMAKE_BUILD_TYPE')
 		if build_type:
 			args = ['--config', build_type] 
 	native_args = build_native_args()
@@ -295,7 +308,7 @@ def command_show(status=False):
 	internal_entries = []
 	cmake_entries = []
 	entries = []
-	for name, (value, vtype) in find_cache_entry().items():
+	for name, (value, vtype) in find_cmake_cache_entries().items():
 		if not value:
 			continue
 		if vtype == 'INTERNAL':
