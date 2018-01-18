@@ -18,7 +18,7 @@ class XCMAKE:
 	COMMAND = os.path.abspath(sys.argv[0])
 	BUILD_DIR = os.environ.get('XCMAKE_BUILD_DIR') or 'build_xcmake'
 	SEARCH_CMAKELISTS = True
-	CMAKE_MIN_VERSION = '2.8'
+	CMAKE_MIN_VERSION = '3.3'
 	ARGS = None
 
 class XCMakeError(Exception):
