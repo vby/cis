@@ -5,6 +5,7 @@ import os
 import subprocess
 import argparse
 import shutil
+import re
 
 CMAKE_COMMAND = os.environ.get('XCMAKE_CMAKE_COMMAND') or 'cmake'
 CTEST_COMMAND = os.environ.get('XCMAKE_CTEST_COMMAND') or 'ctest'
@@ -20,6 +21,24 @@ class XCMAKE:
 	BUILD_DIR = os.environ.get('XCMAKE_BUILD_DIR') or 'build'
 	SEARCH_CMAKELISTS = True
 	CMAKE_MIN_VERSION = '3.3'
+
+VisualStudioVersionMap = {
+	7: '7 .NET 2003',
+	8: '8 2005',
+	9: '9 2008',
+	10: '10 2010',
+	11: '11 2012',
+	12: '12 2013',
+	14: '14 2015',
+	15: '15',
+	2003: '7 .NET 2003',
+	2005: '8 2005',
+	2008: '9 2008',
+	2010: '10 2010',
+	2012: '11 2012',
+	2013: '12 2013',
+	2015: '14 2015',
+}
 
 class XCMakeError(Exception):
 	pass
@@ -249,6 +268,14 @@ def subcommand_cmake(args, sub_args, pass_args):
 	cmakelists_dir = get_cmakelists_directory()
 	build_dir = get_build_directory(cmakelists_dir)
 	cmake_args = ['-H' + cmakelists_dir, '-B' + build_dir]
+	if sub_args.G:
+		m = re.match('^[vV][sS]\s*(\d+)(.*)', sub_args.G)
+		if m:
+			ver = m.group(1)
+			ver = VisualStudioVersionMap.get(int(ver), ver)
+			arch = m.group(2).strip()
+			sub_args.G = 'Visual Studio %s%s'%(ver, ' ' + arch if arch else '')
+		cmake_args.extend(('-G', sub_args.G))
 	execute_process(args.cmake_command, cmake_args, pass_args)
 
 def subcommand_build(args, sub_args, pass_args):
@@ -350,6 +377,7 @@ def add_init_parser(subparsers):
 
 def add_cmake_parser(subparsers):
 	parser = subparsers.add_parser('cmake', help='Run cmake')
+	parser.add_argument('-G', help='Specify a build system generator')
 	parser.set_defaults(func=subcommand_cmake)
 
 def add_build_parser(subparsers):
