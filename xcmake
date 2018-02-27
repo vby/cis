@@ -268,7 +268,7 @@ def subcommand_cmake(args, sub_args, pass_args):
 	cmakelists_dir = get_cmakelists_directory()
 	build_dir = get_build_directory(cmakelists_dir)
 	cmake_args = ['-H' + cmakelists_dir, '-B' + build_dir]
-	if sub_args.G:
+	if sub_args and sub_args.G:
 		m = re.match('^[vV][sS]\s*(\d+)(.*)', sub_args.G)
 		if m:
 			ver = m.group(1)
@@ -282,7 +282,7 @@ def subcommand_build(args, sub_args, pass_args):
 	build_dir = get_build_directory()
 	cmakecache = get_cmakecache_path(build_dir)
 	if not os.path.exists(cmakecache):
-		subcommand_cmake(args, [], None)
+		subcommand_cmake(args, None, None)
 	cmake_args = ['--build', build_dir]
 	append_build_config(sub_args, cmake_args)
 	execute_process(args.cmake_command, cmake_args, pass_args)
