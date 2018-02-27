@@ -1,20 +1,18 @@
 ## XCMake
-XCMake - Make frontend for cmake
+XCMake is a CMake command-line helper.
 
 ## Usage:
-* `xcmake ...` make [target...]
+* `xcmake init` Create a CMakeLists.txt template
 
-* `xcmake --scratch` Create a CMakeLists.txt template
+* `xcmake cmake` Run cmake
 
-* `xcmake --update` Update or create cmake cache
+* `xcmake build` Run cmake --build
 
-* `xcmake --update --build ...` Update before make [target...] 
+* `xcmake make` Run cmake --build by make interface
 
-* `xcmake --clean` Remove BUILD_DIR 
+* `xcmake ctest` Run ctest
 
-* `xcmake --status` Show cache status 
+* `xcmake clean` Clean cmake cache
 
-* `xcmake --show` Show cache entries 
-
-* `xcmake --cmake` Run cmake in BUILD_DIR
+* `xcmake status` Show cmake cache entries
 
