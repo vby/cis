@@ -120,13 +120,16 @@ def split_cmake_cache_entry(entry):
 	vtype = name_type[1].strip() if len(name_type) > 1 else None
 	return (name_type[0].strip(), vtype, value.strip())
 
-def find_cmake_cache_entries(name=None):
+def find_cmake_cache_entries(name=None, with_type=False):
 	if hasattr(find_cmake_cache_entries, 'entries'):
 		entries = find_cmake_cache_entries.entries
 		if name == None:
 			return entries 
 		entry = entries.get(name)
-		return entry[0] if entry else ''
+		if not with_type:
+			return entry[0] if entry else ''
+		else:
+			return entry
 	cmakecache = get_cmakecache_path() 
 	if not os.path.exists(cmakecache):
 		raise XCMakeError('The build directory "%s" does not appear to contain %s.'%(get_build_directory(), CMAKECACHE))
@@ -139,7 +142,7 @@ def find_cmake_cache_entries(name=None):
 			ename, vtype, value = split_cmake_cache_entry(line)
 			entries[ename] = (value, vtype)
 	find_cmake_cache_entries.entries = entries
-	return find_cmake_cache_entries(name)
+	return find_cmake_cache_entries(name, with_type)
 
 def scratch(cwd, cmakelists):
 	project_name = os.path.basename(cwd)
@@ -170,7 +173,12 @@ def execute_process(command, args=None, pass_args=None, get_output=False, echo_c
 	if args:
 		argv += args
 	if pass_args:
-		argv += pass_args
+		for arg in pass_args:
+			if arg.startswith('++'):
+				arg = '--' + arg[2:]
+			elif arg[0] == '+':
+				arg = '-' + arg[1:]
+			argv.append(arg) 
 	return call_subprocess(argv, get_output, echo_command)
 
 def get_cmake_generators():
@@ -193,6 +201,8 @@ def print_version():
 		)
 
 def append_build_config(sub_args, cmake_args):
+	if not sub_args:
+		return
 	if sub_args.config:
 		cmake_args.extend(('--config', sub_args.config)) 
 	else:
@@ -269,6 +279,7 @@ def subcommand_init(args, sub_args, pass_args):
 		os.remove(cmakelists)
 		raise
 
+# sub_args can be None
 def subcommand_cmake(args, sub_args, pass_args):
 	cmakelists_dir = get_cmakelists_directory()
 	build_dir = get_build_directory(cmakelists_dir)
@@ -284,6 +295,7 @@ def subcommand_cmake(args, sub_args, pass_args):
 		cmake_args.extend(('-G', sub_args.G))
 	execute_process(args.cmake_command, cmake_args, pass_args)
 
+# sub_args can be None
 def subcommand_build(args, sub_args, pass_args):
 	build_dir = get_build_directory()
 	cmakecache = get_cmakecache_path(build_dir)
@@ -308,8 +320,9 @@ def subcommand_make(args, sub_args, pass_args):
 		targets.add(target)
 		subcommand_build(args, sub_args, ['--target', target] + pass_args)
 
+# sub_args can be None
 def subcommand_ctest(args, sub_args, pass_args):
-	cmake_args = ['-E', 'chdir', get_build_directory(), args.ctest_command, '--force-new-ctest-process']
+	cmake_args = ['-E', 'chdir', get_build_directory(), args.ctest_command]
 	execute_process(args.cmake_command, cmake_args, pass_args)
 
 def subcommand_clean(args, sub_args, pass_args):
@@ -321,43 +334,59 @@ def subcommand_clean(args, sub_args, pass_args):
 		if cmakelists_dir == build_dir:
 			raise XCMakeError('The build directory "%s" contains %s.'%(build_dir, CMAKELISTS))
 		execute_process(args.cmake_command, ['-E', 'remove_directory', build_dir])
+	elif sub_args.target:
+		pass_args.extend(('--target', 'clean'))
+		subcommand_build(args, None, pass_args) 
 	else:
 		cmakecache = get_cmakecache_path() 
 		if os.path.exists(cmakecache):
 			os.remove(cmakecache)
 
-def subcommand_status(args, pass_args, status=False):
+def subcommand_status(args, sub_args, pass_args):
+	cmakelists_dir = get_cmakelists_directory()
+	build_dir = get_build_directory(cmakelists_dir)
+	sys.stdout.write('Source directory: %s\n'%(cmakelists_dir))
+	sys.stdout.write('Binary directory: %s\n'%(build_dir))
+
+def subcommand_show(args, sub_args, pass_args):
+	if sub_args.name:
+		name = sub_args.name
+		entry = find_cmake_cache_entries(name, True)
+		if not entry:
+			raise XCMakeError('No cache entry "%s"'%(name))
+		sys.stdout.write('%s:%s=%s\n'%(name, entry[1], entry[0]))
+		return
 	internal_entries = []
-	cmake_entries = []
 	entries = []
 	for name, (value, vtype) in find_cmake_cache_entries().items():
-		if not value:
-			continue
-		if vtype == 'INTERNAL':
-			if not status or (name.startswith('CMAKE_GENERATOR') or name.endswith('_COMMAND') or name.endswith('_DIR') or name.endswith('_DIRECTORY')):
+		if sub_args.internal:
+			if vtype == 'INTERNAL':
 				internal_entries.append((name, value))
 			continue
-		if vtype == 'PATH' or vtype == 'FILEPATH':
-			if value.endswith('-NOTFOUND'):
-				continue
-		if name.startswith('CMAKE_'):
-			if status:
-				if name.endswith('_PREFIX'):
-					cmake_entries.append((name, vtype, value))
-			else:
-				cmake_entries.append((name, vtype, value))
-		else:
-			if not status:
+		if sub_args.external:
+			if vtype != 'INTERNAL':
 				entries.append((name, vtype, value))
-	print_color('INTERNAL:', attrs='cyan')
-	for name, value in sorted(internal_entries):
-		sys.stdout.write('%s=%s\n'%(name, value))
-	if cmake_entries:
-		print_color('EXTERNAL-CMAKE:', attrs='cyan')
-		for name, vtype, value in sorted(cmake_entries):
-			sys.stdout.write('%s:%s=%s\n'%(name, vtype, value))
+			continue
+		if sub_args.cmake:
+			if name.startswith('CMAKE_'):
+				entries.append((name, vtype, value))
+			continue
+		if sub_args.non_cmake:
+			if not name.startswith('CMAKE_'):
+				entries.append((name, vtype, value))
+			continue
+		if vtype == 'INTERNAL':
+			internal_entries.append((name, value))
+		else:
+			entries.append((name, vtype, value))
+	if internal_entries:
+		if not sub_args.internal:
+			print_color('INTERNAL:', attrs='cyan')
+		for name, value in sorted(internal_entries):
+			sys.stdout.write('%s=%s\n'%(name, value))
 	if entries:
-		print_color('EXTERNAL:', attrs='cyan')
+		if not sub_args.external and not sub_args.cmake and not sub_args.non_cmake:
+			print_color('EXTERNAL:', attrs='cyan')
 		for name, vtype, value in sorted(entries):
 			sys.stdout.write('%s:%s=%s\n'%(name, vtype, value))
 
@@ -377,23 +406,25 @@ class PathOrNameAction(argparse.Action):
 		else:
 			setattr(namespace, self.dest, os.path.abspath(os.path.expanduser(values)))
 
+def add_parser(subparsers, name, *args, **kw):
+	parser = subparsers.add_parser(name, *args, **kw)
+	func = globals()['subcommand_%s'%(name.replace('-', '_'))]
+	parser.set_defaults(func=func)
+	return parser
+
 def add_init_parser(subparsers):
-	parser = subparsers.add_parser('init', help='Create a %s template'%(CMAKELISTS))
-	parser.set_defaults(func=subcommand_init)
+	parser = add_parser(subparsers, 'init', help='Create a %s template'%(CMAKELISTS))
 
 def add_cmake_parser(subparsers):
-	parser = subparsers.add_parser('cmake', help='Run cmake')
-	parser.add_argument('-G', help='Specify a build system generator')
-	parser.set_defaults(func=subcommand_cmake)
+	parser = add_parser(subparsers, 'cmake', help='Run cmake')
+	parser.add_argument('-G', metavar='GENERATOR', help='Specify a build system generator')
 
 def add_build_parser(subparsers):
-	parser = subparsers.add_parser('build', help='Run cmake --build')
+	parser = add_parser(subparsers, 'build', help='Run cmake --build')
 	parser.add_argument('--config', help='For multi-configuration tools, choose CONFIG')
-	parser.set_defaults(func=subcommand_build)
 
 def add_make_parser(subparsers):
-	parser = subparsers.add_parser('make', help='Run cmake --build by make interface')
-	parser.set_defaults(func=subcommand_make)
+	parser = add_parser(subparsers, 'make', help='Run cmake --build by make interface')
 	parser.add_argument('target', nargs='*', help='Targets to make')
 	parser.add_argument('-j', '--jobs', metavar='N', type=int, nargs='?', default=-1, help='Allow N jobs at once; infinite jobs with no arg')
 	parser.add_argument('-d', action='store_true', help='Print lots of debugging information')
@@ -403,17 +434,23 @@ def add_make_parser(subparsers):
 	parser.add_argument('--config', help='For multi-configuration tools, choose CONFIG')
 	
 def add_ctest_parser(subparsers):
-	parser = subparsers.add_parser('ctest', help='Run ctest')
-	parser.set_defaults(func=subcommand_ctest)
+	parser = add_parser(subparsers, 'ctest', help='Run ctest')
 
 def add_clean_parser(subparsers):
-	parser = subparsers.add_parser('clean', help='Clean cmake cache')
-	parser.set_defaults(func=subcommand_clean)
+	parser = add_parser(subparsers, 'clean', help='Clean cmake cache')
 	parser.add_argument('-a', '--all', action='store_true', help='Remove the BUILD_DIR')
+	parser.add_argument('--target', action='store_true', help='Same as %s cmake build --target clean'%(XCMAKE.PROG))
 
 def add_status_parser(subparsers):
-	parser = subparsers.add_parser('status', help='Show cmake cache entries')
-	parser.set_defaults(func=subcommand_status)
+	parser = add_parser(subparsers, 'status', help='Show the working tree status')
+
+def add_show_parser(subparsers):
+	parser = add_parser(subparsers, 'show', help='Show cmake cache entries')
+	parser.add_argument('-N', '--name', help='Show cache entry named NAME')
+	parser.add_argument('--internal', action='store_true', help='Only show cache entries with type INTERNAL')
+	parser.add_argument('--external', action='store_true', help='Only show cache entries with non INTERNAL type')
+	parser.add_argument('--cmake', action='store_true', help='Only show cache entries with "CMAKE_" prefix')
+	parser.add_argument('--non-cmake', action='store_true', help='Only show cache entries with non "CMAKE_" prefix')
 
 def add_subparsers(parser):
 	if parser: 
@@ -429,6 +466,7 @@ def add_subparsers(parser):
 	add_ctest_parser(subparsers)
 	add_clean_parser(subparsers)
 	add_status_parser(subparsers)
+	add_show_parser(subparsers)
 
 	return subparser
 

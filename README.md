@@ -14,5 +14,7 @@ XCMake is a CMake command-line helper.
 
 * `xcmake clean` Clean cmake cache
 
-* `xcmake status` Show cmake cache entries
+* `xcmake status` Show the working tree status
+
+* `xcmake show` Show cmake cache entries
 
