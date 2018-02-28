@@ -181,18 +181,27 @@ def execute_process(command, args=None, pass_args=None, get_output=False, echo_c
 			argv.append(arg) 
 	return call_subprocess(argv, get_output, echo_command)
 
-def get_cmake_generators():
+def get_cmake_generators(cmake_command, no_raise = False):
 	generators = []
 	try:
-		cmake_help_text = execute_process(('-h',), with_pass_argv=False, output=True, echo=False).decode('utf8')
+		cmake_help_text = execute_process(cmake_command, ('-h',), get_output=True, echo_command=False).decode()
 		g = False 
 		for line in cmake_help_text.splitlines():
+			line = line.strip()
+			if not line:
+				continue
 			if g:
-				generators.append(line)
-			elif line.lstrip().startswith('Generators'):
+				if line.endswith(':') or line.startswith('='):
+					continue
+				lines = line.split('=')
+				if len(lines) == 1 and line.endswith('.'):
+					continue
+				generators.append(lines[0].strip())
+			elif line.startswith('Generators'):
 				g = True
-	except Exception as e:
-		pass
+	except:
+	   if not no_raise:
+			raise
 	return generators
 
 def print_version():
@@ -390,6 +399,16 @@ def subcommand_show(args, sub_args, pass_args):
 		for name, vtype, value in sorted(entries):
 			sys.stdout.write('%s:%s=%s\n'%(name, vtype, value))
 
+def subcommand_help(args, sub_args, pass_args):
+	if sub_args.subcommand:
+		sub_args.parser.print_help()
+	elif sub_args.G:	
+		gens = get_cmake_generators(args.cmake_command)
+		idx = 0
+		for gen in gens:
+			idx += 1
+			sys.stderr.write('%02d. %s\n'%(idx, gen))
+
 class ArgumentParser(argparse.ArgumentParser):
 	def error(self, message):
 		sys.stderr.write('%s: %s\nSpecify --help or -h or /? for usage\n'%(self.prog, message))
@@ -409,7 +428,7 @@ class PathOrNameAction(argparse.Action):
 def add_parser(subparsers, name, *args, **kw):
 	parser = subparsers.add_parser(name, *args, **kw)
 	func = globals()['subcommand_%s'%(name.replace('-', '_'))]
-	parser.set_defaults(func=func)
+	parser.set_defaults(parser=parser, func=func)
 	return parser
 
 def add_init_parser(subparsers):
@@ -452,6 +471,11 @@ def add_show_parser(subparsers):
 	parser.add_argument('--cmake', action='store_true', help='Only show cache entries with "CMAKE_" prefix')
 	parser.add_argument('--non-cmake', action='store_true', help='Only show cache entries with non "CMAKE_" prefix')
 
+def add_help_parser(subparsers):
+	parser = add_parser(subparsers, 'help', help='Show help information')
+	parser.add_argument('subcommand', nargs='?', help='Same as %s SUBCOMMAND -h'%(XCMAKE.PROG))
+	parser.add_argument('-G', action='store_true', help='Show cmake available generators')
+
 def add_subparsers(parser):
 	if parser: 
 		subparser = ArgumentParser(parents=(parser,))
@@ -467,6 +491,7 @@ def add_subparsers(parser):
 	add_clean_parser(subparsers)
 	add_status_parser(subparsers)
 	add_show_parser(subparsers)
+	add_help_parser(subparsers)
 
 	return subparser
 

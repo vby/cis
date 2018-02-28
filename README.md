@@ -18,3 +18,5 @@ XCMake is a CMake command-line helper.
 
 * `xcmake show` Show cmake cache entries
 
+* `xcmake help` Show help information
+
