@@ -73,7 +73,7 @@ def call_subprocess(args, get_output=False, echo_command=True):
 	sys.stdout.flush()
 	sys.stderr.flush()
 	if get_output:
-		return subprocess.check_output(args)
+		return subprocess.check_output(args, stderr=subprocess.STDOUT)
 	else:
 		subprocess.check_call(args)
 
@@ -114,35 +114,43 @@ def get_cmakecache_path(build_dir = None):
 		build_dir = get_build_directory()
 	return os.path.join(build_dir, CMAKECACHE)
 
-def split_cmake_cache_entry(entry):
+def remove_cmakecache(build_dir = None):
+	cmakecache = get_cmakecache_path(build_dir) 
+	if os.path.exists(cmakecache):
+		os.remove(cmakecache)
+
+def split_cmakecache_entry(entry):
 	nametype, value = entry.split('=')
 	name_type = nametype.split(':')
 	vtype = name_type[1].strip() if len(name_type) > 1 else None
 	return (name_type[0].strip(), vtype, value.strip())
 
-def find_cmake_cache_entries(name=None, with_type=False):
-	if hasattr(find_cmake_cache_entries, 'entries'):
-		entries = find_cmake_cache_entries.entries
-		if name == None:
-			return entries 
-		entry = entries.get(name)
-		if not with_type:
-			return entry[0] if entry else ''
-		else:
-			return entry
-	cmakecache = get_cmakecache_path() 
-	if not os.path.exists(cmakecache):
-		raise XCMakeError('The build directory "%s" does not appear to contain %s.'%(get_build_directory(), CMAKECACHE))
-	entries = {}
-	with open(cmakecache) as f:
-		for line in f:
-			line = line.strip()
-			if not line or line.startswith('#') or line.startswith('//'):
-				continue
-			ename, vtype, value = split_cmake_cache_entry(line)
-			entries[ename] = (value, vtype)
-	find_cmake_cache_entries.entries = entries
-	return find_cmake_cache_entries(name, with_type)
+def find_cmakecache_entry(name=None, with_type=False, allow_no_cmakecache=False):
+	entries = getattr(find_cmakecache_entry, 'entries', None)
+	if not entries:
+		cmakecache = get_cmakecache_path() 
+		if not os.path.exists(cmakecache):
+			if not allow_no_cmakecache:
+				raise XCMakeError('The build directory "%s" does not appear to contain %s.'%(get_build_directory(), CMAKECACHE))
+			return None
+		entries = {}
+		with open(cmakecache) as f:
+			for line in f:
+				line = line.strip()
+				if not line or line.startswith('#') or line.startswith('//'):
+					continue
+				ename, vtype, value = split_cmakecache_entry(line)
+				entries[ename] = (value, vtype)
+		find_cmakecache_entry.entries = entries
+	if name == None:
+		return entries 
+	entry = entries.get(name)
+	if not with_type:
+		return entry[0] if entry else ''
+	return entry
+
+def find_cmakecache_generator(allow_no_cmakecache=False):
+	return find_cmakecache_entry('CMAKE_GENERATOR', allow_no_cmakecache=allow_no_cmakecache)
 
 def scratch(cwd, cmakelists):
 	project_name = os.path.basename(cwd)
@@ -215,7 +223,7 @@ def append_build_config(sub_args, cmake_args):
 	if sub_args.config:
 		cmake_args.extend(('--config', sub_args.config)) 
 	else:
-		build_type = find_cmake_cache_entries('CMAKE_BUILD_TYPE')
+		build_type = find_cmakecache_entry('CMAKE_BUILD_TYPE')
 		if build_type:
 			cmake_args.extend(('--config', build_type)) 
 
@@ -231,7 +239,7 @@ def append_native_argument(args, arg, p = None):
 			args.append(f(p))
 		return
 	args_dict = {}
-	gen = find_cmake_cache_entries('CMAKE_GENERATOR')
+	gen = find_cmakecache_generator() 
 	if gen and gen.find('Visual Studio') >= 0:
 		args_dict['property'] = lambda x: '/p:%s'%(x)
 		args_dict['jobs'] = lambda x: '/m' if x == None else '/m:%d'%(x)
@@ -285,23 +293,40 @@ def subcommand_init(args, sub_args, pass_args):
 	try:
 		scratch(cwd, cmakelists)
 	except:
-		os.remove(cmakelists)
+		if os.path.exists(cmakelists):
+			os.remove(cmakelists)
 		raise
+
+def map_cmake_generator(cmake_command, g):
+	m = re.match('^\s*[vV][sS]\s*(\d+)(.*)', g)
+	if m:
+		ver = m.group(1)
+		ver = VisualStudioVersionMap.get(int(ver), ver)
+		arch = m.group(2).strip()
+		arch = VisualStudioArchMap.get(arch.lower(), arch)
+		return 'Visual Studio %s%s'%(ver, ' ' + arch if arch else '')
+	m = re.match('^\s*(\d+)\s*$', g)
+	if m:
+		idx = int(m.group(1))
+		if idx > 0:
+			gens = get_cmake_generators(cmake_command, no_raise=True)
+			if gens and idx < len(gens):
+				return gens[idx-1]
+	return g.strip()
 
 # sub_args can be None
 def subcommand_cmake(args, sub_args, pass_args):
 	cmakelists_dir = get_cmakelists_directory()
 	build_dir = get_build_directory(cmakelists_dir)
 	cmake_args = ['-H' + cmakelists_dir, '-B' + build_dir]
-	if sub_args and sub_args.G:
-		m = re.match('^[vV][sS]\s*(\d+)(.*)', sub_args.G)
-		if m:
-			ver = m.group(1)
-			ver = VisualStudioVersionMap.get(int(ver), ver)
-			arch = m.group(2).strip()
-			arch = VisualStudioArchMap.get(arch.lower(), arch)
-			sub_args.G = 'Visual Studio %s%s'%(ver, ' ' + arch if arch else '')
-		cmake_args.extend(('-G', sub_args.G))
+	if sub_args:
+		if sub_args.G:
+			g = map_cmake_generator(args.cmake_command, sub_args.G)
+			if sub_args.force:
+				gen = find_cmakecache_generator(allow_no_cmakecache=True)
+				if gen and g != gen:
+					remove_cmakecache(build_dir)
+			cmake_args.extend(('-G', g))
 	execute_process(args.cmake_command, cmake_args, pass_args)
 
 # sub_args can be None
@@ -347,9 +372,7 @@ def subcommand_clean(args, sub_args, pass_args):
 		pass_args.extend(('--target', 'clean'))
 		subcommand_build(args, None, pass_args) 
 	else:
-		cmakecache = get_cmakecache_path() 
-		if os.path.exists(cmakecache):
-			os.remove(cmakecache)
+		remove_cmakecache(build_dir)
 
 def subcommand_status(args, sub_args, pass_args):
 	cmakelists_dir = get_cmakelists_directory()
@@ -360,14 +383,14 @@ def subcommand_status(args, sub_args, pass_args):
 def subcommand_show(args, sub_args, pass_args):
 	if sub_args.name:
 		name = sub_args.name
-		entry = find_cmake_cache_entries(name, True)
+		entry = find_cmakecache_entry(name, True)
 		if not entry:
 			raise XCMakeError('No cache entry "%s"'%(name))
 		sys.stdout.write('%s:%s=%s\n'%(name, entry[1], entry[0]))
 		return
 	internal_entries = []
 	entries = []
-	for name, (value, vtype) in find_cmake_cache_entries().items():
+	for name, (value, vtype) in find_cmakecache_entry().items():
 		if sub_args.internal:
 			if vtype == 'INTERNAL':
 				internal_entries.append((name, value))
@@ -447,7 +470,8 @@ def add_init_parser(subparsers):
 
 def add_cmake_parser(subparsers):
 	parser = add_parser(subparsers, 'cmake', help='Run cmake')
-	parser.add_argument('-G', metavar='GENERATOR', help='Specify a build system generator')
+	parser.add_argument('-G', metavar='GENERATOR', help='Specify a build system generator, can be the number of %s help -G'%(XCMAKE.PROG))
+	parser.add_argument('-f', '--force', action='store_true', help='Clean cache first if specify a difference generator')
 
 def add_build_parser(subparsers):
 	parser = add_parser(subparsers, 'build', help='Run cmake --build')
