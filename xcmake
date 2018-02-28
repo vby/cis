@@ -401,13 +401,18 @@ def subcommand_show(args, sub_args, pass_args):
 
 def subcommand_help(args, sub_args, pass_args):
 	if sub_args.subcommand:
-		sub_args.parser.print_help()
+		subparser = args.subparsers.get(sub_args.subcommand)
+		if not subparser:
+			raise XCMakeError('No subcommand "%s"'%(sub_args.subcommand))
+		subparser.print_help()
 	elif sub_args.G:	
 		gens = get_cmake_generators(args.cmake_command)
 		idx = 0
 		for gen in gens:
 			idx += 1
 			sys.stderr.write('%02d. %s\n'%(idx, gen))
+	else:
+		args.subparser_help.print_help()
 
 class ArgumentParser(argparse.ArgumentParser):
 	def error(self, message):
@@ -429,6 +434,12 @@ def add_parser(subparsers, name, *args, **kw):
 	parser = subparsers.add_parser(name, *args, **kw)
 	func = globals()['subcommand_%s'%(name.replace('-', '_'))]
 	parser.set_defaults(parser=parser, func=func)
+	subparser_dict = getattr(subparsers, 'subparser_dict', None)
+	if not subparser_dict:
+		subparser_dict = {name: parser}
+		setattr(subparsers, 'subparser_dict', subparser_dict)
+	else:
+		subparser_dict[name] = parser
 	return parser
 
 def add_init_parser(subparsers):
@@ -493,7 +504,7 @@ def add_subparsers(parser):
 	add_show_parser(subparsers)
 	add_help_parser(subparsers)
 
-	return subparser
+	return subparser, subparsers.subparser_dict
 
 def create_parser(add_help):
 	parser = ArgumentParser(prog=XCMAKE.PROG, 
@@ -510,11 +521,12 @@ def create_parser(add_help):
 def build_parsers():
 	parser = create_parser(add_help=True)
 
-	subparser = add_subparsers(None)
+	subparser, subparsers = add_subparsers(None)
 
 	parser_help = create_parser(add_help=False)
-	subparser_help = add_subparsers(parser_help)
+	subparser_help, subparsers_help = add_subparsers(parser_help)
 
+	parser.set_defaults(subparsers=subparsers, subparser=subparser, subparser_help=subparser_help)
 	return (parser, subparser, subparser_help)
 
 def split_arguments(args):
