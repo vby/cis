@@ -6,6 +6,7 @@ import subprocess
 import argparse
 import shutil
 import re
+import types
 
 CMAKE_COMMAND = os.environ.get('XCMAKE_CMAKE_COMMAND') or 'cmake'
 CTEST_COMMAND = os.environ.get('XCMAKE_CTEST_COMMAND') or 'ctest'
@@ -18,7 +19,7 @@ class XCMAKE:
 	DESCRIPTION = 'XCMake - CMake command-line helper'
 	PROG = os.path.basename(sys.argv[0])
 	COMMAND = os.path.abspath(sys.argv[0])
-	BUILD_DIR = os.environ.get('XCMAKE_BUILD_DIR') or 'build'
+	BUILD_DIR_NAME = os.environ.get('XCMAKE_BUILD_DIR_NAME') or 'build'
 	SEARCH_CMAKELISTS = True
 	CMAKE_MIN_VERSION = '3.3'
 
@@ -67,15 +68,23 @@ def argument_text_escape(arg):
 		return '"%s"'%(arg)
 	return arg
 
+def print_command(args):
+	print_color(' '.join((argument_text_escape(arg) for arg in args)), attrs='green,bold')
+
 def call_subprocess(args, get_output=False, echo_command=True):
 	if echo_command:
-		print_color(' '.join((argument_text_escape(arg) for arg in args)), attrs='green,bold')
+		print_command(args)
 	sys.stdout.flush()
 	sys.stderr.flush()
 	if get_output:
 		return subprocess.check_output(args, stderr=subprocess.STDOUT)
 	else:
 		subprocess.check_call(args)
+
+def print_version():
+	sys.stdout.write('%s version %s\n\n%s maintained and supported by vby (Github.com/vby).\n'
+			%(XCMAKE.PROG, XCMAKE.VERSION, XCMAKE.NAME)
+		)
 
 def find_cmakelists_directory(cdir = os.getcwd()):
 	while not os.path.exists(os.path.join(cdir, CMAKELISTS)):
@@ -107,15 +116,15 @@ def change_to_cmakelists_directory():
 def get_build_directory(cmakelists_dir = None):
 	if not cmakelists_dir:
 		cmakelists_dir = get_cmakelists_directory()
-	return os.path.normpath(os.path.join(cmakelists_dir, XCMAKE.BUILD_DIR))
+	return os.path.normpath(os.path.join(cmakelists_dir, XCMAKE.BUILD_DIR_NAME))
 
-def get_cmakecache_path(build_dir = None):
+def get_cmakecache_file(build_dir = None):
 	if not build_dir:
 		build_dir = get_build_directory()
 	return os.path.join(build_dir, CMAKECACHE)
 
 def remove_cmakecache(build_dir = None):
-	cmakecache = get_cmakecache_path(build_dir) 
+	cmakecache = get_cmakecache_file(build_dir) 
 	if os.path.exists(cmakecache):
 		os.remove(cmakecache)
 
@@ -128,7 +137,7 @@ def split_cmakecache_entry(entry):
 def find_cmakecache_entry(name=None, with_type=False, allow_no_cmakecache=False):
 	entries = getattr(find_cmakecache_entry, 'entries', None)
 	if not entries:
-		cmakecache = get_cmakecache_path() 
+		cmakecache = get_cmakecache_file() 
 		if not os.path.exists(cmakecache):
 			if not allow_no_cmakecache:
 				raise XCMakeError('The build directory "%s" does not appear to contain %s.'%(get_build_directory(), CMAKECACHE))
@@ -208,94 +217,9 @@ def get_cmake_generators(cmake_command, no_raise = False):
 			elif line.startswith('Generators'):
 				g = True
 	except:
-	   if not no_raise:
+		if not no_raise:
 			raise
 	return generators
-
-def print_version():
-	sys.stdout.write('%s version %s\n\n%s maintained and supported by vby (Github.com/vby).\n'
-			%(XCMAKE.PROG, XCMAKE.VERSION, XCMAKE.NAME)
-		)
-
-def append_build_config(sub_args, cmake_args):
-	if not sub_args:
-		return
-	if sub_args.config:
-		cmake_args.extend(('--config', sub_args.config)) 
-	else:
-		build_type = find_cmakecache_entry('CMAKE_BUILD_TYPE')
-		if build_type:
-			cmake_args.extend(('--config', build_type)) 
-
-def append_native_argument(args, arg, p = None):
-	args_dict = getattr(append_native_argument, 'args_dict', None)
-	if args_dict:
-		f = args_dict[arg]
-		if isinstance(f, str):
-			args.append(f)
-		elif isinstance(f, tuple):
-			args.extend(f)
-		else:
-			args.append(f(p))
-		return
-	args_dict = {}
-	gen = find_cmakecache_generator() 
-	if gen and gen.find('Visual Studio') >= 0:
-		args_dict['property'] = lambda x: '/p:%s'%(x)
-		args_dict['jobs'] = lambda x: '/m' if x == None else '/m:%d'%(x)
-		args_dict['trace'] = '/v:d'
-		args_dict['debug'] = lambda x: '/v:d' if x != 'a' else '/v:diag'
-		args_dict['silent'] = ('/nologo', '/v:q')
-	else:
-		args_dict['property'] = lambda x: '%s'%(x)
-		args_dict['jobs'] = lambda x: '-j' if x == None else '-j%d'%(x)
-		args_dict['trace'] = '--trace' 
-		args_dict['debug'] = lambda x: '-d' if x == None else '--debug=%s'%(x)
-		args_dict['silent'] = '-s'
-	append_native_argument.args_dict = args_dict
-	return append_native_argument(args, arg, p)
-
-def make_arguments_to_native_arguments(sub_args):
-	args = []
-	# properties in targets
-	if sub_args.target:
-		targets = []
-		for target in sub_args.target:
-			if '=' in target:
-				append_native_argument(args, 'property', target)
-			else:
-				targets.append(target)
-		sub_args.target = targets
-	# -j --jobs
-	if sub_args.jobs == None: 
-		append_native_argument(args, 'jobs')
-	elif sub_args.jobs >= 0:
-		append_native_argument(args, 'jobs', sub_args.jobs)
-	# --trace
-	if sub_args.trace:
-		append_native_argument(args, 'trace')
-	# -d --deubg
-	if sub_args.d or sub_args.debug != False:
-		if not sub_args.debug:
-			append_native_argument(args, 'debug')
-		else:
-			append_native_argument(args, 'debug', sub_args.debug)
-	# -s --silent
-	if sub_args.silent:
-		append_native_argument(args, 'silent')
-	return args
-
-def subcommand_init(args, sub_args, pass_args):
-	cwd = os.getcwd()
-	cmakelists = os.path.join(cwd, CMAKELISTS)
-	if os.path.exists(cmakelists):
-		raise XCMakeError('"%s" exists.'%(cmakelists))
-	try:
-		scratch(cwd, cmakelists)
-	except:
-		if os.path.exists(cmakelists):
-			os.remove(cmakelists)
-		raise
 
 def map_cmake_generator(cmake_command, g):
 	m = re.match('^\s*[vV][sS]\s*(\d+)(.*)', g)
@@ -314,75 +238,186 @@ def map_cmake_generator(cmake_command, g):
 				return gens[idx-1]
 	return g.strip()
 
-# sub_args can be None
-def subcommand_cmake(args, sub_args, pass_args):
+def extend_build_config(options, cmake_args):
+	if not options:
+		return
+	if options.config:
+		cmake_args.extend(('--config', options.config)) 
+	else:
+		build_type = find_cmakecache_entry('CMAKE_BUILD_TYPE')
+		if build_type:
+			cmake_args.extend(('--config', build_type)) 
+
+def unique_msbuild_arguments(args):
+	uargs = []
+	uset = set()
+	for arg in reversed(args):
+		if arg[0] == '/':
+			pos = arg.find(':')
+			if pos > 1:
+				uarg = arg[:pos]
+			else:
+				uarg = arg
+			if uarg in uset:
+				continue
+			uset.add(uarg)
+		uargs.insert(0, arg)
+	return uargs
+
+def map_make_native_argument(args, arg, param = None):
+	amap = getattr(map_make_native_argument, 'amap', None)
+	if amap == None:
+		amap = {}
+		gen = find_cmakecache_generator() 
+		#if gen and gen.find('Visual Studio') >= 0:
+		if gen:
+			amap['defaults'] = ('/nologo', '/verbosity:minimal')
+			amap['unique'] = unique_msbuild_arguments 
+			amap['property'] = lambda x: '/property:%s'%(x)
+			amap['jobs'] = lambda x: '/maxcpucount' if x == None else '/maxcpucount:%d'%(x)
+			amap['trace'] = '/verbosity:normal'
+			amap['debug'] = lambda x: ('/verbosity:diagnostic', '/detailedsummary') if not x or x == 'a' else '/verbosity:detailed'
+			amap['silent'] = '/verbosity:quiet'
+			amap['help'] = '/help'
+			amap['version'] = '/version'
+		map_make_native_argument.amap = amap
+	if not amap:
+		if arg == 'unique':
+			return arg
+		if arg != 'defaults':
+			args.append('--' + arg)
+		return
+	f = amap[arg]
+	if arg == 'unique':
+		return f(args) 
+	if isinstance(f, types.FunctionType):
+		f = f(param)
+	if isinstance(f, tuple):
+		args.extend(f)
+	else:
+		args.append(f)
+
+def make_arguments_to_native_arguments(options):
+	args = []
+	map_make_native_argument(args, 'defaults')
+	# properties in targets
+	targets = []
+	if options.targets:
+		target_set = set()
+		for target in options.targets:
+			if '=' in target:
+				map_make_native_argument(args, 'property', target)
+			else:
+				if target in target_set:
+					continue
+				target_set.add(target)
+				targets.append(target)
+	# -j --jobs
+	if options.jobs == None: 
+		map_make_native_argument(args, 'jobs')
+	elif options.jobs >= 0:
+		map_make_native_argument(args, 'jobs', options.jobs)
+	# --trace
+	if options.trace:
+		map_make_native_argument(args, 'trace')
+	# -d --deubg
+	if options.d or options.debug != False:
+		if options.d or not options.debug:
+			map_make_native_argument(args, 'debug')
+		else:
+			map_make_native_argument(args, 'debug', options.debug)
+	# -s --silent
+	if options.silent:
+		map_make_native_argument(args, 'silent')
+	# -h --help
+	if options.help:
+		map_make_native_argument(args, 'help')
+	# -v --version
+	if options.version:
+		map_make_native_argument(args, 'version')
+	return args, targets
+
+def subcommand_init(options, pass_args):
+	cwd = os.getcwd()
+	cmakelists = os.path.join(cwd, CMAKELISTS)
+	if os.path.exists(cmakelists):
+		raise XCMakeError('"%s" exists.'%(cmakelists))
+	try:
+		scratch(cwd, cmakelists)
+	except:
+		if os.path.exists(cmakelists):
+			os.remove(cmakelists)
+		raise
+
+def subcommand_cmake(options, pass_args):
 	cmakelists_dir = get_cmakelists_directory()
 	build_dir = get_build_directory(cmakelists_dir)
 	cmake_args = ['-H' + cmakelists_dir, '-B' + build_dir]
-	if sub_args:
-		if sub_args.G:
-			g = map_cmake_generator(args.cmake_command, sub_args.G)
-			if sub_args.force:
+	if options:
+		if options.G:
+			g = map_cmake_generator(XCMAKE.cmake_command, options.G)
+			if options.force:
 				gen = find_cmakecache_generator(allow_no_cmakecache=True)
 				if gen and g != gen:
 					remove_cmakecache(build_dir)
 			cmake_args.extend(('-G', g))
-	execute_process(args.cmake_command, cmake_args, pass_args)
+	execute_process(XCMAKE.cmake_command, cmake_args, pass_args)
 
-# sub_args can be None
-def subcommand_build(args, sub_args, pass_args):
+def subcommand_build(options, pass_args):
 	build_dir = get_build_directory()
-	cmakecache = get_cmakecache_path(build_dir)
+	cmakecache = get_cmakecache_file(build_dir)
 	if not os.path.exists(cmakecache):
-		subcommand_cmake(args, None, None)
+		subcommand_cmake(None, None)
 	cmake_args = ['--build', build_dir]
-	append_build_config(sub_args, cmake_args)
-	execute_process(args.cmake_command, cmake_args, pass_args)
+	extend_build_config(options, cmake_args)
+	execute_process(XCMAKE.cmake_command, cmake_args, pass_args)
 
-def subcommand_make(args, sub_args, pass_args):
-	native_args = make_arguments_to_native_arguments(sub_args)
+def subcommand_make(options, pass_args):
+	if options.directory:
+		os.chdir(options.directory)
+	if pass_args == None:
+		pass_args = []
+	native_args, targets = make_arguments_to_native_arguments(options)
 	if native_args:
-		pass_args.append('--')
 		pass_args.extend(native_args)
-	if not sub_args.target:
-		subcommand_build(args, sub_args, pass_args)
-		return
-	targets = set()
-	for target in sub_args.target:
-		if target in targets:
-			continue
-		targets.add(target)
-		subcommand_build(args, sub_args, ['--target', target] + pass_args)
+	pass_args = map_make_native_argument(pass_args, 'unique')
+	if not targets:
+		subcommand_build(options, ['--'] + pass_args)
+	else:
+		for target in targets:
+			subcommand_build(options, ['--target', target, '--'] + pass_args)
 
-# sub_args can be None
-def subcommand_ctest(args, sub_args, pass_args):
-	cmake_args = ['-E', 'chdir', get_build_directory(), args.ctest_command]
-	execute_process(args.cmake_command, cmake_args, pass_args)
+def subcommand_ctest(options, pass_args):
+	cmakecache = get_cmakecache_file()
+	if not os.path.exists(cmakecache):
+		subcommand_cmake(None, None)
+	cmake_args = ['-E', 'chdir', get_build_directory(), XCMAKE.ctest_command]
+	execute_process(XCMAKE.cmake_command, cmake_args, pass_args)
 
-def subcommand_clean(args, sub_args, pass_args):
+def subcommand_clean(options, pass_args):
 	cmakelists_dir = get_cmakelists_directory()
 	build_dir = get_build_directory(cmakelists_dir)
 	if not os.path.exists(build_dir):
 		return
-	if sub_args.all:
+	if options.all:
 		if cmakelists_dir == build_dir:
 			raise XCMakeError('The build directory "%s" contains %s.'%(build_dir, CMAKELISTS))
-		execute_process(args.cmake_command, ['-E', 'remove_directory', build_dir])
-	elif sub_args.target:
+		execute_process(XCMAKE.cmake_command, ['-E', 'remove_directory', build_dir])
+	elif options.target:
 		pass_args.extend(('--target', 'clean'))
-		subcommand_build(args, None, pass_args) 
+		subcommand_build(None, pass_args) 
 	else:
 		remove_cmakecache(build_dir)
 
-def subcommand_status(args, sub_args, pass_args):
+def subcommand_status(options, pass_args):
 	cmakelists_dir = get_cmakelists_directory()
 	build_dir = get_build_directory(cmakelists_dir)
 	sys.stdout.write('Source directory: %s\n'%(cmakelists_dir))
 	sys.stdout.write('Binary directory: %s\n'%(build_dir))
 
-def subcommand_show(args, sub_args, pass_args):
-	if sub_args.name:
-		name = sub_args.name
+def subcommand_show(options, pass_args):
+	if options.name:
+		name = options.name
 		entry = find_cmakecache_entry(name, True)
 		if not entry:
 			raise XCMakeError('No cache entry "%s"'%(name))
@@ -390,20 +425,20 @@ def subcommand_show(args, sub_args, pass_args):
 		return
 	internal_entries = []
 	entries = []
-	for name, (value, vtype) in find_cmakecache_entry().items():
-		if sub_args.internal:
+	for name, (value, vtype) in find_cmakecache_entry().items(): #items() for compatible to python3
+		if options.internal:
 			if vtype == 'INTERNAL':
 				internal_entries.append((name, value))
 			continue
-		if sub_args.external:
+		if options.external:
 			if vtype != 'INTERNAL':
 				entries.append((name, vtype, value))
 			continue
-		if sub_args.cmake:
+		if options.cmake:
 			if name.startswith('CMAKE_'):
 				entries.append((name, vtype, value))
 			continue
-		if sub_args.non_cmake:
+		if options.non_cmake:
 			if not name.startswith('CMAKE_'):
 				entries.append((name, vtype, value))
 			continue
@@ -412,34 +447,35 @@ def subcommand_show(args, sub_args, pass_args):
 		else:
 			entries.append((name, vtype, value))
 	if internal_entries:
-		if not sub_args.internal:
+		if not options.internal:
 			print_color('INTERNAL:', attrs='cyan')
 		for name, value in sorted(internal_entries):
 			sys.stdout.write('%s=%s\n'%(name, value))
 	if entries:
-		if not sub_args.external and not sub_args.cmake and not sub_args.non_cmake:
+		if not options.external and not options.cmake and not options.non_cmake:
 			print_color('EXTERNAL:', attrs='cyan')
 		for name, vtype, value in sorted(entries):
 			sys.stdout.write('%s:%s=%s\n'%(name, vtype, value))
 
-def subcommand_help(args, sub_args, pass_args):
-	if sub_args.subcommand:
-		subparser = args.subparsers.get(sub_args.subcommand)
+def subcommand_help(options, pass_args):
+	if not options:
+		XCMAKE.subparser_help.print_help()
+		return
+	if options.subcommand:
+		subparser = XCMAKE.subparsers.get(options.subcommand)
 		if not subparser:
-			raise XCMakeError('No subcommand "%s"'%(sub_args.subcommand))
+			raise XCMakeError('No subcommand "%s"'%(options.subcommand))
 		subparser.print_help()
-	elif sub_args.G:	
-		gens = get_cmake_generators(args.cmake_command)
+	elif options.G:	
+		gens = get_cmake_generators(XCMAKE.cmake_command)
 		idx = 0
 		for gen in gens:
 			idx += 1
-			sys.stderr.write('%02d. %s\n'%(idx, gen))
-	else:
-		args.subparser_help.print_help()
+			sys.stdout.write('%02d. %s\n'%(idx, gen))
 
 class ArgumentParser(argparse.ArgumentParser):
 	def error(self, message):
-		sys.stderr.write('%s: %s\nSpecify --help or -h or /? for usage\n'%(self.prog, message))
+		sys.stderr.write('%s: %s\nSpecify --help or -h for usage\n'%(self.prog, message))
 		self.exit(1)
 
 class PathAction(argparse.Action):
@@ -473,19 +509,23 @@ def add_cmake_parser(subparsers):
 	parser.add_argument('-G', metavar='GENERATOR', help='Specify a build system generator, can be the number of %s help -G'%(XCMAKE.PROG))
 	parser.add_argument('-f', '--force', action='store_true', help='Clean cache first if specify a difference generator')
 
-def add_build_parser(subparsers):
-	parser = add_parser(subparsers, 'build', help='Run cmake --build')
+def add_build_parser(subparsers, parser=None):
+	if not parser:
+		parser = add_parser(subparsers, 'build', help='Run cmake --build')
 	parser.add_argument('--config', help='For multi-configuration tools, choose CONFIG')
 
 def add_make_parser(subparsers):
-	parser = add_parser(subparsers, 'make', help='Run cmake --build by make interface')
-	parser.add_argument('target', nargs='*', help='Targets to make')
+	parser = add_parser(subparsers, 'make', prefix_chars='-+', help='Run cmake --build by make interface')
+	parser.add_argument('targets', nargs='*', help='Targets to make')
+	parser.add_argument('-C', '--directory', action=PathAction, help='Change to DIRECTORY before doing anything')
 	parser.add_argument('-j', '--jobs', metavar='N', type=int, nargs='?', default=-1, help='Allow N jobs at once; infinite jobs with no arg')
 	parser.add_argument('-d', action='store_true', help='Print lots of debugging information')
 	parser.add_argument('--debug', metavar='FLAGS', nargs='?', default=False, help='Print various types of debugging information')
 	parser.add_argument('--trace', action='store_true', help='Print tracing information')
 	parser.add_argument('-s', '--silent', '--quiet', action='store_true', help='Don\'t echo recipes')
-	parser.add_argument('--config', help='For multi-configuration tools, choose CONFIG')
+	parser.add_argument('+h', '++help', action='store_true', help='Print native build help message and exit')
+	parser.add_argument('+v', '++version', action='store_true', help='Print the version number of native build and exit')
+	add_build_parser(subparsers, parser)
 	
 def add_ctest_parser(subparsers):
 	parser = add_parser(subparsers, 'ctest', help='Run ctest')
@@ -566,14 +606,14 @@ def split_arguments(args):
 def parse_arguments(parser, subparser, args):
 	args, sub_args = split_arguments(args)
 
-	args = parser.parse_args(args)
+	parser.parse_args(args, XCMAKE)
 	if sub_args:
-		sub_args, pass_args = subparser.parse_known_args(sub_args)
+		options, pass_args = subparser.parse_known_args(sub_args)
 	else:
-		sub_args = None
+		options = None
 		pass_args = []
 
-	return (args, sub_args, pass_args)
+	return (options, pass_args)
 
 def main():
 	(parser, subparser, subparser_help) = build_parsers()
@@ -583,18 +623,18 @@ def main():
 		subparser_help.print_help()
 		sys.exit(0);
 
-	args, sub_args, pass_args = parse_arguments(parser, subparser, argv)
+	options, pass_args = parse_arguments(parser, subparser, argv)
 
-	if args.help:
+	if XCMAKE.help:
 		subparser_help.print_help()
-	elif args.version:
+	elif XCMAKE.version:
 		print_version()
-	elif not sub_args.func:
+	elif not options or not options.func:
 		subparser_help.print_help()
 	else:
-		if args.directory:
-			os.chdir(args.directory)
-		sub_args.func(args, sub_args, pass_args)
+		if XCMAKE.directory:
+			os.chdir(XCMAKE.directory)
+		options.func(options, pass_args)
 
 if __name__ == '__main__':
 	try:
