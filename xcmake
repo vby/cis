@@ -86,12 +86,14 @@ def print_c(text, end='\n', file=sys.stdout, flush=False, attrs=None):
 		file.flush()
 
 class ArgumentSubparsers(dict):
-	def __init__(self, subparsers):
+	def __init__(self, parent, **kw):
 		dict.__init__(self)
-		self._subparsers = subparsers
+		self.parent = parent
+		self._subparsers = argparse.ArgumentParser.add_subparsers(parent, **kw)
 	
 	def add_parser(self, name, **kw):
 		parser = self._subparsers.add_parser(name, **kw)
+		parser.parent = self.parent
 		self[name] = parser
 		return parser
 
@@ -108,8 +110,7 @@ class ArgumentParser(argparse.ArgumentParser):
 		return argparse.ArgumentParser.parse_known_args(self, args, namespace)
 
 	def add_subparsers(self, **kw):
-		subparsers = argparse.ArgumentParser.add_subparsers(self, **kw)
-		subparsers = ArgumentSubparsers(subparsers)
+		subparsers = ArgumentSubparsers(self) 
 		self._subparsers_list.append(subparsers)
 		return subparsers
 
@@ -292,7 +293,7 @@ def map_cmake_generator(cmake_command, g):
 				return gens[idx-1]
 	return g.strip()
 
-def is_single_configuration_generator(gen=None, default=True):
+def is_single_cfg_generator(gen=None, default=True):
 	if not gen:
 		gen = find_cmake_generator() 
 	if not gen:
@@ -305,6 +306,8 @@ def extend_build_cfg_arguments(cmake_args, config):
 	if config:
 		cmake_args.extend(('--config', config)) 
 		return
+	if is_single_cfg_generator():
+		return
 	build_type = find_cmakecache_entry('CMAKE_BUILD_TYPE')
 	if build_type:
 		cmake_args.extend(('--config', build_type)) 
@@ -313,7 +316,7 @@ def extend_test_cfg_arguments(cmake_args, config):
 	if config:
 		cmake_args.extend(('-C', config)) 
 		return
-	if is_single_configuration_generator():
+	if is_single_cfg_generator():
 		return
 	build_type = find_cmakecache_entry('CMAKE_BUILD_TYPE')
 	if build_type:
@@ -456,6 +459,8 @@ def subcommand_build(options, pass_args):
 	cmake_args = ['--build', build_dir]
 	if options:
 		extend_build_cfg_arguments(cmake_args, options.config)
+		if options.clean:
+			cmake_args.append('--clean-first')
 	execute_process(OPTIONS.cmake_command, cmake_args, pass_args)
 
 def subcommand_make(options, pass_args):
@@ -473,10 +478,10 @@ def subcommand_make(options, pass_args):
 	if pass_args:
 		pass_args.insert(0, '--')
 	if not targets:
-		subcommand_build(None, pass_args)
+		subcommand_build(options, pass_args)
 	else:
 		for target in targets:
-			subcommand_build(None, ['--target', target] + pass_args)
+			subcommand_build(options, ['--target', target] + pass_args)
 
 def subcommand_test(options, pass_args):
 	cmakecache = get_cmakecache_path()
@@ -579,9 +584,11 @@ def add_cmake_parser(subparsers):
 	parser.add_argument('-G', metavar='<generator>', help='Specify a build system generator, can be the number of %s help -G'%(XCMAKE_PROG))
 	parser.add_argument('-f', '--force', action='store_true', help='Clean cache first if specify a difference generator')
 
-def add_build_parser(subparsers):
-	parser = add_subparser(subparsers, 'build', help='Run cmake --build')
+def add_build_parser(subparsers, parser=None):
+	if not parser:
+		parser = add_subparser(subparsers, 'build', help='Run cmake --build')
 	parser.add_argument('--config', metavar='<cfg>', help='For multi-configuration tools, choose <config>')
+	parser.add_argument('--clean', '--clean-first', action='store_true', help='Build target \'clean\' first, then build')
 
 def add_make_parser(subparsers):
 	parser = add_subparser(subparsers, 'make', prefix_chars='-+', help='Run cmake --build with make interface')
@@ -594,6 +601,8 @@ def add_make_parser(subparsers):
 	parser.add_argument('-s', '--silent', '--quiet', action='store_true', help='Don\'t echo recipes')
 	parser.add_argument('-v', '--version', action='store_true', help='Print the version number of native build and exit')
 	parser.add_argument('+h', '++help', action='store_true', help='Print native build help message and exit')
+	group = parser.add_argument_group(title='build arguments')
+	add_build_parser(subparsers, group)
 	
 def add_test_parser(subparsers):
 	parser = add_subparser(subparsers, 'test', help='Run ctest')
@@ -642,9 +651,9 @@ def build_argument_parser():
 	parser.set_defaults(parser=parser)
 
 	parser.add_argument('-C', '--directory', metavar='<directory>', action=PathAction, help='Change to <directory> before doing anything')
-	parser.add_argument('--build-dir', metavar='<build-dir>', default=DEFAULT_BUILD_DIR, help='Default "%s"'%(DEFAULT_BUILD_DIR))
-	parser.add_argument('--cmake-command', metavar='<cmake-command>', action=PathOrNameAction, default=DEFAULT_CMAKE_COMMAND, help='Default "%s"'%(DEFAULT_CMAKE_COMMAND))
-	parser.add_argument('--ctest-command', metavar='<ctest-command>', action=PathOrNameAction, default=DEFAULT_CTEST_COMMAND, help='Default "%s"'%(DEFAULT_CTEST_COMMAND))
+	parser.add_argument('--build-dir', metavar='<build-dir>', default=DEFAULT_BUILD_DIR, help='Default \'%s\''%(DEFAULT_BUILD_DIR))
+	parser.add_argument('--cmake-command', metavar='<cmake-command>', action=PathOrNameAction, default=DEFAULT_CMAKE_COMMAND, help='Default \'%s\''%(DEFAULT_CMAKE_COMMAND))
+	parser.add_argument('--ctest-command', metavar='<ctest-command>', action=PathOrNameAction, default=DEFAULT_CTEST_COMMAND, help='Default \'%s\''%(DEFAULT_CTEST_COMMAND))
 	parser.add_argument('-v', '--version', action='version', version=XCMAKE_VERSION_STRING, help='Print the version number of xcmake and exit')
 
 	add_subparsers(parser)
