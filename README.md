@@ -20,3 +20,6 @@ XCMake is a CMake command-line helper, help you build in source with cmake and c
 
 * `xcmake help` Show help information
 
+## License
+MIT
+

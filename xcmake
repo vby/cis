@@ -146,10 +146,13 @@ def call_subprocess(args, get_output=False, echo_command=True):
 		print_arguments(args)
 	sys.stdout.flush()
 	sys.stderr.flush()
-	if get_output:
-		return subprocess.check_output(args, stderr=subprocess.STDOUT)
-	else:
-		subprocess.check_call(args)
+	try:
+		if get_output:
+			return subprocess.check_output(args, stderr=subprocess.STDOUT)
+		else:
+			subprocess.check_call(args)
+	except OSError as e:
+		raise XCMakeError('Process "%s" %s'%(args[0], str(e)))
 
 def execute_process(command, args=None, pass_args=None, **kw):
 	argv = [command]
@@ -296,10 +299,14 @@ def extend_build_config(cmake_args, config):
 		if build_type:
 			cmake_args.extend(('--config', build_type)) 
 
-def unique_msbuild_arguments(args):
+def rebuild_msbuild_arguments(args):
 	uargs = []
 	uset = set()
-	for arg in reversed(args):
+	exclusive = False
+	args.insert(0, '/verbosity:minimal')
+	args.insert(0, '/nologo')
+	for i in range(len(args), 0, -1):
+		arg = args[i-1]
 		if arg[0] == '/':
 			pos = arg.find(':')
 			if pos > 1:
@@ -309,6 +316,10 @@ def unique_msbuild_arguments(args):
 			if uarg in uset:
 				continue
 			uset.add(uarg)
+			if uarg == '/version' or uarg == '/help':
+				exclusive = True
+		if exclusive and i <= 2:
+			break
 		uargs.insert(0, arg)
 	return uargs
 
@@ -318,8 +329,7 @@ def map_make_native_argument(args, arg, param = None):
 		amap = {}
 		gen = find_cmakecache_generator() 
 		if gen and gen.find('Visual Studio') >= 0:
-			amap['defaults'] = ('/nologo', '/verbosity:minimal')
-			amap['unique'] = unique_msbuild_arguments 
+			amap['rebuild'] = rebuild_msbuild_arguments
 			amap['property'] = lambda x: '/property:%s'%(x)
 			amap['jobs'] = lambda x: '/maxcpucount' if x == None else '/maxcpucount:%d'%(x)
 			amap['trace'] = '/verbosity:normal'
@@ -329,16 +339,15 @@ def map_make_native_argument(args, arg, param = None):
 			amap['version'] = '/version'
 		map_make_native_argument.amap = amap
 	if not amap:
-		if arg == 'unique':
+		if arg == 'rebuild':
 			return args
-		if arg != 'defaults':
-			if param:
-				args.append('--%s=%s'%(arg, str(param)))
-			else:
-				args.append('--' + arg)
+		if param:
+			args.append('--%s=%s'%(arg, str(param)))
+		else:
+			args.append('--' + arg)
 		return
 	f = amap[arg]
-	if arg == 'unique':
+	if arg == 'rebuild':
 		return f(args) 
 	if isinstance(f, types.FunctionType):
 		f = f(param)
@@ -349,7 +358,6 @@ def map_make_native_argument(args, arg, param = None):
 
 def make_arguments_to_native_arguments(options):
 	args = []
-	map_make_native_argument(args, 'defaults')
 	# properties in targets
 	targets = []
 	if options.targets:
@@ -434,7 +442,7 @@ def subcommand_make(options, pass_args):
 	native_args, targets = make_arguments_to_native_arguments(options)
 	if native_args:
 		pass_args.extend(native_args)
-	pass_args = map_make_native_argument(pass_args, 'unique')
+	pass_args = map_make_native_argument(pass_args, 'rebuild')
 	if pass_args:
 		pass_args.insert(0, '--')
 	if not targets:
