@@ -14,9 +14,10 @@ CMAKELISTS = 'CMakeLists.txt'
 CMAKECACHE = 'CMakeCache.txt'
 XCMAKE_NAME = 'XCMake'
 XCMAKE_VERSION='1.1.0'
-XCMAKE_DESCRIPTION = 'XCMake - CMake command-line helper'
 XCMAKE_PROG = os.path.basename(sys.argv[0])
 XCMAKE_COMMAND = os.path.abspath(sys.argv[0])
+XCMAKE_DESCRIPTION = 'XCMake - CMake command-line helper'
+XCMAKE_EPILOG = 'See \'%s help <command>\' to read about a specific subcommand.'%(XCMAKE_PROG)
 XCMAKE_VERSION_STRING='%%(prog)s version %s\n\n%s maintained and supported by vby (Github.com/vby).\n'%(XCMAKE_VERSION, XCMAKE_NAME)
 
 # Configs
@@ -243,7 +244,7 @@ def find_cmakecache_entry(name=None, with_type=False, allow_no_cmakecache=False)
 		return entry[0] if entry else ''
 	return entry
 
-def find_cmakecache_generator(allow_no_cmakecache=False):
+def find_cmake_generator(allow_no_cmakecache=False):
 	return find_cmakecache_entry('CMAKE_GENERATOR', allow_no_cmakecache=allow_no_cmakecache)
 
 def init_cmakelists(cmakelists):
@@ -291,13 +292,39 @@ def map_cmake_generator(cmake_command, g):
 				return gens[idx-1]
 	return g.strip()
 
-def extend_build_config(cmake_args, config):
+def is_single_configuration_generator(gen=None, default=True):
+	if not gen:
+		gen = find_cmake_generator() 
+	if not gen:
+		return default
+	if gen.find('Makefile') >= 0 or gen.find('Ninja') >= 0:
+		return True
+	return False
+
+def extend_build_cfg_arguments(cmake_args, config):
 	if config:
 		cmake_args.extend(('--config', config)) 
+		return
+	build_type = find_cmakecache_entry('CMAKE_BUILD_TYPE')
+	if build_type:
+		cmake_args.extend(('--config', build_type)) 
+
+def extend_test_cfg_arguments(cmake_args, config):
+	if config:
+		cmake_args.extend(('-C', config)) 
+		return
+	if is_single_configuration_generator():
+		return
+	build_type = find_cmakecache_entry('CMAKE_BUILD_TYPE')
+	if build_type:
+		config = build_type 
 	else:
-		build_type = find_cmakecache_entry('CMAKE_BUILD_TYPE')
-		if build_type:
-			cmake_args.extend(('--config', build_type)) 
+		cfg_types = find_cmakecache_entry('CMAKE_CONFIGURATION_TYPES')
+		if cfg_types:
+			config = cfg_types.split(';')[0]
+		else:
+			config = 'Debug'
+	cmake_args.extend(('-C', config))
 
 def rebuild_msbuild_arguments(args):
 	uargs = []
@@ -327,7 +354,7 @@ def map_make_native_argument(args, arg, param = None):
 	amap = getattr(map_make_native_argument, 'amap', None)
 	if amap == None:
 		amap = {}
-		gen = find_cmakecache_generator() 
+		gen = find_cmake_generator() 
 		if gen and gen.find('Visual Studio') >= 0:
 			amap['rebuild'] = rebuild_msbuild_arguments
 			amap['property'] = lambda x: '/property:%s'%(x)
@@ -415,7 +442,7 @@ def subcommand_cmake(options, pass_args):
 		if options.G:
 			g = map_cmake_generator(OPTIONS.cmake_command, options.G)
 			if options.force:
-				gen = find_cmakecache_generator(allow_no_cmakecache=True)
+				gen = find_cmake_generator(allow_no_cmakecache=True)
 				if gen and g != gen:
 					remove_cmakecache(build_dir)
 			cmake_args.extend(('-G', g))
@@ -428,7 +455,7 @@ def subcommand_build(options, pass_args):
 		subcommand_cmake(None, None)
 	cmake_args = ['--build', build_dir]
 	if options:
-		extend_build_config(cmake_args, options.config)
+		extend_build_cfg_arguments(cmake_args, options.config)
 	execute_process(OPTIONS.cmake_command, cmake_args, pass_args)
 
 def subcommand_make(options, pass_args):
@@ -451,11 +478,12 @@ def subcommand_make(options, pass_args):
 		for target in targets:
 			subcommand_build(None, ['--target', target] + pass_args)
 
-def subcommand_ctest(options, pass_args):
+def subcommand_test(options, pass_args):
 	cmakecache = get_cmakecache_path()
 	if not os.path.exists(cmakecache):
 		subcommand_build(None, None)
 	cmake_args = ['-E', 'chdir', get_build_directory(), OPTIONS.ctest_command]
+	extend_test_cfg_arguments(cmake_args, options.build_config)
 	execute_process(OPTIONS.cmake_command, cmake_args, pass_args)
 
 def subcommand_clean(options, pass_args):
@@ -553,7 +581,7 @@ def add_cmake_parser(subparsers):
 
 def add_build_parser(subparsers):
 	parser = add_subparser(subparsers, 'build', help='Run cmake --build')
-	parser.add_argument('--config', help='For multi-configuration tools, choose <config>')
+	parser.add_argument('--config', metavar='<cfg>', help='For multi-configuration tools, choose <config>')
 
 def add_make_parser(subparsers):
 	parser = add_subparser(subparsers, 'make', prefix_chars='-+', help='Run cmake --build with make interface')
@@ -567,8 +595,9 @@ def add_make_parser(subparsers):
 	parser.add_argument('-v', '--version', action='store_true', help='Print the version number of native build and exit')
 	parser.add_argument('+h', '++help', action='store_true', help='Print native build help message and exit')
 	
-def add_ctest_parser(subparsers):
-	parser = add_subparser(subparsers, 'ctest', help='Run ctest')
+def add_test_parser(subparsers):
+	parser = add_subparser(subparsers, 'test', help='Run ctest')
+	parser.add_argument('-C', '--build-config', metavar='<cfg>', help='Choose configuration to test')
 
 def add_clean_parser(subparsers):
 	parser = add_subparser(subparsers, 'clean', help='Clean cmake cache files')
@@ -598,7 +627,7 @@ def add_subparsers(parser):
 	add_cmake_parser(subparsers)
 	add_build_parser(subparsers)
 	add_make_parser(subparsers)
-	add_ctest_parser(subparsers)
+	add_test_parser(subparsers)
 	add_clean_parser(subparsers)
 	add_status_parser(subparsers)
 	add_show_parser(subparsers)
@@ -607,6 +636,7 @@ def add_subparsers(parser):
 def build_argument_parser():
 	parser = ArgumentParser(prog=XCMAKE_PROG, 
 		description=XCMAKE_DESCRIPTION,
+		epilog=XCMAKE_EPILOG,
 		formatter_class=argparse.RawTextHelpFormatter,
 		add_help=True)
 	parser.set_defaults(parser=parser)
