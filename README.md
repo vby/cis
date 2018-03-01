@@ -1,18 +1,18 @@
 ## XCMake
-XCMake is a CMake command-line helper.
+XCMake is a CMake command-line helper, help you build in source with cmake and ctest.
 
 ## Usage:
-* `xcmake init` Create a CMakeLists.txt template
+* `xcmake init` Init a CMakeLists.txt template
 
 * `xcmake cmake` Run cmake
 
 * `xcmake build` Run cmake --build
 
-* `xcmake make` Run cmake --build by make interface
+* `xcmake make` Run cmake --build with make interface
 
 * `xcmake ctest` Run ctest
 
-* `xcmake clean` Clean cmake cache
+* `xcmake clean` Clean cmake cache files
 
 * `xcmake status` Show the working tree status
 
