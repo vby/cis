@@ -767,6 +767,7 @@ def build_argument_parser():
 		epilog=XCMAKE_EPILOG,
 		formatter_class=argparse.RawTextHelpFormatter,
 		add_help=True)
+	parser.set_defaults(d_func=None)
 
 	parser.add_argument('-C', '--directory', metavar='<directory>', action=PathAction, help='Change to <directory> before doing anything')
 	parser.add_argument('--build-dir', metavar='<build-dir>', default=DEFAULT_BUILD_DIR, help='Default \'%s\''%(DEFAULT_BUILD_DIR))
