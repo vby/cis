@@ -567,6 +567,8 @@ def subcommand_make(options, unknown_args):
 	native_args, targets = make_arguments_to_native_arguments(options)
 	if native_args:
 		unknown_args.extend(native_args)
+	if options.target:
+		targets.append(options.target)
 	unknown_args = map_make_native_argument(unknown_args, 'rebuild')
 	if unknown_args:
 		unknown_args.insert(0, '--')
@@ -681,8 +683,9 @@ def add_cmake_parser(subparsers):
 	parser.add_argument('-G', metavar='<generator>', help='Specify a build system generator, can be the number of %s help -G'%(XCMAKE_PROG))
 	parser.add_argument('-f', '--force', action='store_true', help='Clean cache first if specify a difference generator')
 
-def add_build_parser(subparsers):
-	parser = add_subparser(subparsers, 'build', help='Run cmake --build')
+def add_build_parser(subparsers, parser=None):
+	if not parser:
+		parser = add_subparser(subparsers, 'build', help='Run cmake --build')
 	parser.add_argument('--target', metavar='<target>', help='Build <target> instead of default targets')
 	parser.add_argument('--config', metavar='<config>', help='For multi-configuration tools, choose <config>')
 	parser.add_argument('--clean', '--clean-first', action='store_true', help='Build target \'clean\' first, then build')
@@ -698,6 +701,8 @@ def add_make_parser(subparsers):
 	parser.add_argument('-s', '--silent', '--quiet', action='store_true', help='Don\'t echo recipes')
 	parser.add_argument('-v', '--version', action='store_true', help='Print the version number of native build and exit')
 	parser.add_argument('+h', '++help', action='store_true', help='Print native build help message and exit')
+	group = parser.add_argument_group(title='build arguments')
+	add_build_parser(subparsers, group)
 	
 def add_test_parser(subparsers):
 	parser = add_subparser(subparsers, 'test', help='Run ctest')
