@@ -320,19 +320,41 @@ def fuzzy_match(words, word):
 	for w in words:
 		if w.lower().startswith(word_l):
 			return w
+	def find_chars(s, chars):
+		poss = []
+		pos = 0
+		for c in chars:
+			pos = s.find(c, pos)
+			if pos < 0:
+				break
+			poss.append(pos)
+			pos += 1
+		if pos <= 0:
+			return None 
+		return poss 
 	word_u = word.upper()
 	candidates = []
 	for w in words:
-		pos = 0
-		for c in word_u:
-			pos = w.find(c, pos)
-			if pos < 0:
-				break
-			pos += 1
-		if pos > 0:
-			candidates.append((w, pos-1))
+		poss = find_chars(w, word_u)
+		if poss:
+			candidates.append((w, poss))
+	if not candidates:
+		for w in words:
+			poss = find_chars(w.lower(), word_l)
+			if poss:
+				candidates.append((w, poss))
 	if candidates:
-		return min(candidates, key=lambda x: x[1])[0]
+		if len(candidates) == 1:
+			return candidates[0][0]
+		c = min(candidates, key=lambda x: x[1])[0]
+		m = re.match(r'^(\D+)\d+ ', c)
+		if m:
+			re_candidates = []
+			c_s = m.group(1)
+			for w, _ in candidates:
+				if w.startswith(c_s):
+					return w
+		return c
 	return None
 
 def map_cmake_generator(cmake_command, gen):
@@ -340,6 +362,14 @@ def map_cmake_generator(cmake_command, gen):
 	if not gen:
 		return ''
 	gens = get_cmake_generators(cmake_command)
+	expand_gens = []
+	for g, choices, _ in gens:
+		expand_gens.append(g)
+		if choices:
+			for choice in choices:
+				expand_gens.append('%s %s'%(g, choice))
+	if gen in expand_gens:
+		return gen
 	m = re.match(r'^\s*(\d+)\s*(\w*)$', gen)
 	if m:
 		idx = int(m.group(1))
@@ -351,12 +381,6 @@ def map_cmake_generator(cmake_command, gen):
 					return '%s %s'%(g, fuzzy_match(choices, opt) or opt)
 			else:
 				return g
-	expand_gens = []
-	for g, choices, _ in gens:
-		expand_gens.append(g)
-		if choices:
-			for choice in choices:
-				expand_gens.append('%s %s'%(g, choice))
 	return fuzzy_match(expand_gens, gen) or gen
 
 def call_subcommand_cmake_optional():
