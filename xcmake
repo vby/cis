@@ -608,13 +608,32 @@ def subcommand_clean(options, unknown_args):
 def subcommand_status(options, unknown_args):
 	source_dir = get_source_directory()
 	build_dir = get_build_directory()
-	print_c('Source directory: %s'%(source_dir))
-	print_c('Build directory: %s'%(build_dir))
+	print_c('CMAKE_SOURCE_DIR = %s'%(source_dir))
+	print_c('CMAKE_BINARY_DIR = ', end=None)
+	has_cmakecache = False
+	if not os.path.exists(build_dir):
+		print_c('%s (not exists)'%(build_dir), attrs='red')
+	else:
+		if not is_cmakecache_exists(build_dir):
+			print_c(build_dir, end=None)
+			print_c(' (no %s)'%(CMAKECACHE), attrs='red')
+		else:
+			has_cmakecache = True
+			print_c(build_dir)
+	if has_cmakecache:
+		names = ('CMAKE_PROJECT_NAME', 'CMAKE_GENERATOR', 'CMAKE_INSTALL_PREFIX')
+		for name in names:
+			value = find_cmakecache_entry(name)
+			if name == 'CMAKE_GENERATOR':
+				platform = find_cmakecache_entry(name + '_PLATFORM')
+				toolset = find_cmakecache_entry(name + '_TOOLSET')
+				print_c('%s = %s (PLATFORM=%s, TOOLSET=%s)'%(name, value or '', platform or '', toolset or '')) 
+			else:
+				print_c('%s = %s'%(name, value or '')) 
 
 def subcommand_show(options, unknown_args):
 	if options.name:
 		name = options.name
-		entry = find_cmakecache_entry(name, True)
 		if not entry:
 			raise XCMakeError('No cache entry "%s"'%(name))
 		print_c('%s:%s=%s'%(name, entry[1], entry[0]))
@@ -646,12 +665,12 @@ def subcommand_show(options, unknown_args):
 		if not options.internal:
 			print_c('INTERNAL:', attrs='cyan')
 		for name, value in sorted(internal_entries):
-			print_c('%s=%s'%(name, value))
+			print_c('%s = %s'%(name, value))
 	if entries:
 		if not options.external and not options.cmake and not options.non_cmake:
 			print_c('EXTERNAL:', attrs='cyan')
 		for name, vtype, value in sorted(entries):
-			print_c('%s:%s=%s'%(name, vtype, value))
+			print_c('%s:%s = %s'%(name, vtype, value))
 
 def subcommand_help(options, unknown_args):
 	if options.subcommand:
