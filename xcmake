@@ -42,29 +42,6 @@ install(TARGETS %(proj)s DESTINATION bin)\n
 #install(DIRECTORY src/ include/ DESTINATION include FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")\n
 '''
 
-VS_VERSION_MAP = {
-	7: '7 .NET 2003',
-	8: '8 2005',
-	9: '9 2008',
-	2002: '.NET 2002', # Removed since CMake 3.6
-	2003: '7 .NET 2003',
-	2005: '8 2005',
-	2008: '9 2008',
-	2010: '10',
-	2012: '11',
-	2013: '12',
-	2015: '14',
-	2017: '15',
-}
-
-VS_ARCH_MAP = {
-	'x86': '',
-	'x64': 'Win64',
-	'x86_64': 'Win64',
-	'arm': 'ARM',
-	'ia64': 'IA64',
-}
-
 # ArgumentParser
 ARG_PARSER = None
 
@@ -166,20 +143,15 @@ def get_subcommand_func(name):
 def get_separated_arguments(name=''):
 	return getattr(OPTIONS, 'sep__' + name, None)
 
-def call_subcommand(names, args=None):
-	if not isinstance(names, tuple) and not isinstance(names, list):
-		names = (names,)
-	for name in names:
-		sep_args = get_separated_arguments(name) 
-		if sep_args:
-			break
-	if not args:
+def call_subcommand(name, args=None):
+	if args == None:
 		args = []
+	sep_args = get_separated_arguments(name)
 	if sep_args:
 		args.extend(sep_args)
 	parser = ARG_PARSER.get_subparsers()[name]
 	options, unknown_args = parser.parse_known_args(args)
-	options.func(options, unknown_args)
+	options.d_func(options, unknown_args)
 	
 def escape_argument(arg):
 	if not arg or ' ' in arg:
@@ -299,45 +271,98 @@ def init_cmakelists(cmakelists):
 	with open(cmakelists, 'w') as f:
 		f.write(INIT_CMAKELISTS % { 'xcmake_name': XCMAKE_NAME, 'proj': project_name })
 
-def get_cmake_generators(cmake_command, no_raise = False):
-	generators = []
+def get_cmake_generators(cmake_command, no_raise=False):
+	gen_lines = []
 	try:
 		cmake_help_text = execute_process(cmake_command, ('-h',), get_output=True, echo_command=False).decode()
 		g = False 
 		for line in cmake_help_text.splitlines():
-			line = line.strip()
-			if not line:
+			line_s = line.strip()
+			if not line_s:
 				continue
 			if g:
-				if line.endswith(':') or line.startswith('='):
+				if line.endswith(':'):
 					continue
-				lines = line.split('=')
-				if len(lines) == 1 and line.endswith('.'):
+				if line.startswith('    ') and gen_lines:
+					gen_lines[-1] = gen_lines[-1] + ' ' + line_s
 					continue
-				generators.append(lines[0].strip())
-			elif line.startswith('Generators'):
+				gen_lines.append(line_s)
+			elif line_s.startswith('Generators'):
 				g = True
 	except:
 		if not no_raise:
 			raise
+		return None
+	generators = []
+	for line in gen_lines:
+		lines = line.split('=')
+		if len(lines) == 1:
+		  continue
+		gen = lines[0].strip()
+		if not gen:
+			continue
+		gen_help = lines[1].strip()
+		m = re.match(r'^(.+)\[\w+\]$', gen) 
+		if m:
+			gen = m.group(1).strip()
+			choices = re.findall(r'"(\w+)"', gen_help)
+		else:
+			choices = None
+		generators.append((gen, choices, gen_help))
 	return generators
 
-def map_cmake_generator(cmake_command, g):
-	m = re.match(r'^\s*[vV][sS]\s*(\d+)(.*)', g)
-	if m:
-		ver = m.group(1)
-		ver = VS_VERSION_MAP.get(int(ver), ver)
-		arch = m.group(2).strip()
-		arch = VS_ARCH_MAP.get(arch.lower(), arch)
-		return 'Visual Studio %s%s'%(ver, ' ' + arch if arch else '')
-	m = re.match(r'^\s*(\d+)\s*$', g)
+def fuzzy_match(words, word):
+	if not word:
+		return None
+	if word in words:
+		return word
+	word_l = word.lower()
+	for w in words:
+		if w.lower().startswith(word_l):
+			return w
+	word_u = word.upper()
+	candidates = []
+	for w in words:
+		pos = 0
+		for c in word_u:
+			pos = w.find(c, pos)
+			if pos < 0:
+				break
+			pos += 1
+		if pos > 0:
+			candidates.append((w, pos-1))
+	if candidates:
+		return min(candidates, key=lambda x: x[1])[0]
+	return None
+
+def map_cmake_generator(cmake_command, gen):
+	gen = gen.strip()
+	if not gen:
+		return ''
+	gens = get_cmake_generators(cmake_command)
+	m = re.match(r'^\s*(\d+)\s*(\w*)$', gen)
 	if m:
 		idx = int(m.group(1))
-		if idx > 0:
-			gens = get_cmake_generators(cmake_command, no_raise=True)
-			if gens and idx < len(gens):
-				return gens[idx-1]
-	return g.strip()
+		opt = m.group(2) 
+		if idx > 0 and idx < len(gens):
+			g, choices, _ = gens[idx-1]
+			if opt:
+				if choices:
+					return '%s %s'%(g, fuzzy_match(choices, opt) or opt)
+			else:
+				return g
+	expand_gens = []
+	for g, choices, _ in gens:
+		expand_gens.append(g)
+		if choices:
+			for choice in choices:
+				expand_gens.append('%s %s'%(g, choice))
+	return fuzzy_match(expand_gens, gen) or gen
+
+def call_subcommand_cmake_optional():
+	sep_args = get_separated_arguments('cmake')
+	if sep_args or not is_cmakecache_exists():
+		call_subcommand('cmake', sep_args)
 
 def is_single_cfg_generator(gen=None, default=True):
 	if not gen:
@@ -417,7 +442,9 @@ def map_make_native_argument(args, arg, param = None):
 	if not amap:
 		if arg == 'rebuild':
 			return args
-		if param:
+		if arg == 'property':
+			args.append(param)
+		elif param:
 			args.append('--%s=%s'%(arg, str(param)))
 		else:
 			args.append('--' + arg)
@@ -487,7 +514,7 @@ def subcommand_cmake(options, unknown_args):
 	source_dir = get_source_directory()
 	build_dir = get_build_directory()
 	cmake_args = ['-H' + source_dir, '-B' + build_dir]
-	if options.G:
+	if options.G != None:
 		g = map_cmake_generator(OPTIONS.cmake_command, options.G)
 		if options.force:
 			gen = find_cmake_generator(allow_no_cmakecache=True)
@@ -497,10 +524,8 @@ def subcommand_cmake(options, unknown_args):
 	execute_process(OPTIONS.cmake_command, cmake_args, unknown_args)
 
 def subcommand_build(options, unknown_args):
-	build_dir = get_build_directory()
-	if not is_cmakecache_exists():
-		call_subcommand('cmake')
-	cmake_args = ['--build', build_dir]
+	call_subcommand_cmake_optional()
+	cmake_args = ['--build', get_build_directory()]
 	if options:
 		if options.target:
 			cmake_args.extend(('--target', options.target))
@@ -512,23 +537,30 @@ def subcommand_build(options, unknown_args):
 	execute_process(OPTIONS.cmake_command, cmake_args, unknown_args)
 
 def subcommand_make(options, unknown_args):
-	if options.directory:
-		os.chdir(options.directory)
-	if not is_cmakecache_exists():
-		call_subcommand('cmake')
+	if options.make_directory:
+		os.chdir(options.make_directory)
+	call_subcommand_cmake_optional()
 	native_args, targets = make_arguments_to_native_arguments(options)
 	if native_args:
 		unknown_args.extend(native_args)
 	unknown_args = map_make_native_argument(unknown_args, 'rebuild')
+	if unknown_args:
+		unknown_args.insert(0, '--')
+	cmake_args = ['--build', get_build_directory()]
 	if not targets:
-		call_subcommand('build', unknown_args)
+		execute_process(OPTIONS.cmake_command, cmake_args, unknown_args)
 	else:
 		for target in targets:
-			call_subcommand('build', ['--target', target] + unknown_args)
+			execute_process(OPTIONS.cmake_command, cmake_args + ['--target', target], unknown_args)
 
 def subcommand_test(options, unknown_args):
-	if not is_cmakecache_exists():
-		call_subcommand(('make', 'build'))
+	subcmd = 'make'
+	sep_args = get_separated_arguments('make')
+	if not sep_args:
+		subcmd = 'build'
+		sep_args = get_separated_arguments('build')
+	if sep_args or not is_cmakecache_exists():
+		call_subcommand(subcmd, sep_args)
 	cmake_args = ['-E', 'chdir', get_build_directory(), OPTIONS.ctest_command]
 	extend_test_cfg_arguments(cmake_args, options.build_config)
 	execute_process(OPTIONS.cmake_command, cmake_args, unknown_args)
@@ -597,24 +629,24 @@ def subcommand_show(options, unknown_args):
 
 def subcommand_help(options, unknown_args):
 	if options.subcommand:
-		subparser = OPTIONS.parser.get_subparsers().get(options.subcommand)
+		subparser = ARG_PARSER.get_subparsers().get(options.subcommand)
 		if not subparser:
 			raise XCMakeError('No subcommand \'%s\''%(options.subcommand))
 		subparser.print_help()
 	elif options.G:	
 		gens = get_cmake_generators(OPTIONS.cmake_command)
 		idx = 0
-		for gen in gens:
+		for gen, choices, gen_help in gens:
 			idx += 1
-			print_c('%02d. %s'%(idx, gen))
+			print_c('%02d. %s%s'%(idx, gen, ' [%s]'%('|'.join(choices)) if choices else ''))
 	else:
-		OPTIONS.parser.print_help()
+		ARG_PARSER.print_help()
 		return
 
 def add_subparser(subparsers, name, **kw):
 	parser = subparsers.add_parser(name, **kw)
 	func = get_subcommand_func(name)
-	parser.set_defaults(subcommand=name, subparser=parser, func=func)
+	parser.set_defaults(d_subcommand=name, d_parser=parser, d_func=func)
 	return parser
 
 def add_init_parser(subparsers):
@@ -634,7 +666,7 @@ def add_build_parser(subparsers):
 def add_make_parser(subparsers):
 	parser = add_subparser(subparsers, 'make', prefix_chars='-+', help='Run cmake --build with make interface')
 	parser.add_argument('targets', nargs='*', help='Targets to make')
-	parser.add_argument('-C', '--directory', metavar='<directory>', action=PathAction, help='Change to <directory> before doing anything')
+	parser.add_argument('-C', '--directory', metavar='<directory>', action=PathAction, dest='make_directory', help='Change to <directory> before doing anything')
 	parser.add_argument('-j', '--jobs', metavar='<n>', type=int, nargs='?', default=-1, help='Allow <n> jobs at once; infinite jobs with no arg')
 	parser.add_argument('-d', action='store_true', help='Print lots of debugging information')
 	parser.add_argument('--debug', metavar='<flags>', nargs='?', default=False, help='Print various types of debugging information')
@@ -688,7 +720,7 @@ def build_argument_parser():
 		formatter_class=argparse.RawTextHelpFormatter,
 		add_help=True)
 
-	parser.add_argument('-C', '--directory', metavar='<directory>', dest='source_directory', action=PathAction, help='Change to <directory> before doing anything')
+	parser.add_argument('-C', '--directory', metavar='<directory>', action=PathAction, help='Change to <directory> before doing anything')
 	parser.add_argument('--build-dir', metavar='<build-dir>', default=DEFAULT_BUILD_DIR, help='Default \'%s\''%(DEFAULT_BUILD_DIR))
 	parser.add_argument('--cmake-command', metavar='<cmake-command>', action=PathOrNameAction, default=DEFAULT_CMAKE_COMMAND, help='Default \'%s\''%(DEFAULT_CMAKE_COMMAND))
 	parser.add_argument('--ctest-command', metavar='<ctest-command>', action=PathOrNameAction, default=DEFAULT_CTEST_COMMAND, help='Default \'%s\''%(DEFAULT_CTEST_COMMAND))
@@ -711,18 +743,18 @@ def main():
 	options, unknown_args = ARG_PARSER.parse_known_args(args)
 	OPTIONS = options
 
-	if not options or not options.func:
+	if not options or not options.d_func:
 		ARG_PARSER.print_help()
 	else:
-		if OPTIONS.source_directory:
-			os.chdir(OPTIONS.source_directory)
+		if OPTIONS.directory:
+			os.chdir(OPTIONS.directory)
 		pass_args = get_separated_arguments()
 		if pass_args:
 			unknown_args.extend(pass_args)
-		pass_args = get_separated_arguments(OPTIONS.subcommand)
+		pass_args = get_separated_arguments(options.d_subcommand)
 		if pass_args:
 			unknown_args.extend(pass_args)
-		options.func(options, unknown_args)
+		options.d_func(options, unknown_args)
 
 if __name__ == '__main__':
 	try:
