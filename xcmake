@@ -634,9 +634,10 @@ def subcommand_status(options, unknown_args):
 def subcommand_show(options, unknown_args):
 	if options.name:
 		name = options.name
+		entry = find_cmakecache_entry(name, with_type=True)
 		if not entry:
 			raise XCMakeError('No cache entry "%s"'%(name))
-		print_c('%s:%s=%s'%(name, entry[1], entry[0]))
+		print_c('%s:%s = %s'%(name, entry[1], entry[0]))
 		return
 	internal_entries = []
 	entries = []
