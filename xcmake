@@ -385,7 +385,7 @@ def map_cmake_generator(cmake_command, gen):
 
 def call_subcommand_cmake_optional():
 	sep_args = get_separated_arguments('cmake')
-	if sep_args or not is_cmakecache_exists():
+	if sep_args != None or not is_cmakecache_exists():
 		call_subcommand('cmake', sep_args)
 
 def is_single_cfg_generator(gen=None, default=True):
@@ -582,10 +582,10 @@ def subcommand_make(options, unknown_args):
 def subcommand_test(options, unknown_args):
 	subcmd = 'make'
 	sep_args = get_separated_arguments('make')
-	if not sep_args:
+	if sep_args == None:
 		subcmd = 'build'
 		sep_args = get_separated_arguments('build')
-	if sep_args or not is_cmakecache_exists():
+	if sep_args != None or not is_cmakecache_exists():
 		call_subcommand(subcmd, sep_args)
 	cmake_args = ['-E', 'chdir', get_build_directory(), OPTIONS.ctest_command]
 	extend_test_cfg_arguments(cmake_args, options.build_config)
@@ -621,7 +621,7 @@ def subcommand_status(options, unknown_args):
 			has_cmakecache = True
 			print_c(build_dir)
 	if has_cmakecache:
-		names = ('CMAKE_PROJECT_NAME', 'CMAKE_GENERATOR', 'CMAKE_INSTALL_PREFIX')
+		names = ('CMAKE_PROJECT_NAME', 'CMAKE_GENERATOR', 'CMAKE_BUILD_TYPE', 'CMAKE_INSTALL_PREFIX')
 		for name in names:
 			value = find_cmakecache_entry(name)
 			if name == 'CMAKE_GENERATOR':
