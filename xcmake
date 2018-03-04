@@ -407,6 +407,11 @@ def extend_build_cfg_arguments(cmake_args, config):
 	if build_type:
 		cmake_args.extend(('--config', build_type)) 
 
+def extend_build_nontarget_arguments(cmake_args, options):
+	extend_build_cfg_arguments(cmake_args, options.config)
+	if options.clean:
+		cmake_args.append('--clean-first')
+
 def extend_test_cfg_arguments(cmake_args, config):
 	if config:
 		cmake_args.extend(('-C', config)) 
@@ -549,13 +554,13 @@ def subcommand_cmake(options, unknown_args):
 
 def subcommand_build(options, unknown_args):
 	call_subcommand_cmake_optional()
+
 	cmake_args = ['--build', get_build_directory()]
 	if options:
 		if options.target:
 			cmake_args.extend(('--target', options.target))
-		extend_build_cfg_arguments(cmake_args, options.config)
-		if options.clean:
-			cmake_args.append('--clean-first')
+		extend_build_nontarget_arguments(cmake_args, options)
+
 	if unknown_args:
 		unknown_args.insert(0, '--')
 	execute_process(OPTIONS.cmake_command, cmake_args, unknown_args)
@@ -564,15 +569,21 @@ def subcommand_make(options, unknown_args):
 	if options.make_directory:
 		os.chdir(options.make_directory)
 	call_subcommand_cmake_optional()
+
+	cmake_args = ['--build', get_build_directory()]
+
 	native_args, targets = make_arguments_to_native_arguments(options)
 	if native_args:
 		unknown_args.extend(native_args)
+
 	if options.target:
 		targets.append(options.target)
+	extend_build_nontarget_arguments(cmake_args, options)
+
 	unknown_args = map_make_native_argument(unknown_args, 'rebuild')
 	if unknown_args:
 		unknown_args.insert(0, '--')
-	cmake_args = ['--build', get_build_directory()]
+
 	if not targets:
 		execute_process(OPTIONS.cmake_command, cmake_args, unknown_args)
 	else:
