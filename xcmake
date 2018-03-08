@@ -54,13 +54,49 @@ OPTIONS = None
 class XCMakeError(Exception):
 	pass
 
+def simple_escape_argument(arg):
+	if not arg or ' ' in arg:
+		return '"%s"'%(arg)
+	return arg
+
+def print_subprocess_arguments(args):
+	print_c(' '.join((simple_escape_argument(arg) for arg in args)), attrs='green,bold')
+
+def call_subprocess(args, check_output=False, echo_command=True, **kw):
+	if echo_command:
+		print_subprocess_arguments(args)
+	sys.stdout.flush()
+	sys.stderr.flush()
+	try:
+		if check_output:
+			if 'stderr' not in kw:
+				kw['stderr'] = subprocess.STDOUT
+			return subprocess.check_output(args, **kw)
+		else:
+			subprocess.check_call(args, **kw)
+	except OSError as e:
+		raise XCMakeError('Subprocess "%s" %s'%(args[0], str(e)))
+
+def execute_process(command, args=None, unknown_args=None, **kw):
+	argv = [command]
+	if args:
+		argv += args
+	if unknown_args:
+		for arg in unknown_args:
+			if arg.startswith('++'):
+				arg = '--' + arg[2:]
+			elif arg.startswith('+'):
+				arg = '-' + arg[1:]
+			argv.append(arg)
+	return call_subprocess(argv, **kw)
+
 def print_c(text, end='\n', file=sys.stdout, flush=False, attrs=None):
 	if attrs:
-		argv = ['cmake', '-E', 'cmake_echo_color', '--no-newline']
-		argv += ('--%s'%(attr.strip()) for attr in attrs.split(','))
-		argv.append(text)
+		args = ['-E', 'cmake_echo_color', '--no-newline']
+		args += ('--%s'%(attr.strip()) for attr in attrs.split(','))
+		args.append(text)
 		file.flush()
-		subprocess.check_call(argv, stdout=file)
+		execute_process(OPTIONS.cmake_command, args, echo_command=False, stdout=file)
 	else:
 		file.write(text)
 	if end:
@@ -153,40 +189,6 @@ def call_subcommand(name, args=None):
 	options, unknown_args = parser.parse_known_args(args)
 	options.d_func(options, unknown_args)
 	
-def escape_argument(arg):
-	if not arg or ' ' in arg:
-		return '"%s"'%(arg)
-	return arg
-
-def print_arguments(args):
-	print_c(' '.join((escape_argument(arg) for arg in args)), attrs='green,bold')
-
-def call_subprocess(args, get_output=False, echo_command=True):
-	if echo_command:
-		print_arguments(args)
-	sys.stdout.flush()
-	sys.stderr.flush()
-	try:
-		if get_output:
-			return subprocess.check_output(args, stderr=subprocess.STDOUT)
-		else:
-			subprocess.check_call(args)
-	except OSError as e:
-		raise XCMakeError('Process "%s" %s'%(args[0], str(e)))
-
-def execute_process(command, args=None, unknown_args=None, **kw):
-	argv = [command]
-	if args:
-		argv += args
-	if unknown_args:
-		for arg in unknown_args:
-			if arg.startswith('++'):
-				arg = '--' + arg[2:]
-			elif arg.startswith('+'):
-				arg = '-' + arg[1:]
-			argv.append(arg) 
-	return call_subprocess(argv, **kw)
-
 def find_source_directory(from_dir = None):
 	if not from_dir:
 		from_dir = os.getcwd()
@@ -271,10 +273,10 @@ def init_cmakelists(cmakelists):
 	with open(cmakelists, 'w') as f:
 		f.write(INIT_CMAKELISTS % { 'xcmake_name': XCMAKE_NAME, 'proj': project_name })
 
-def get_cmake_generators(cmake_command, no_raise=False):
+def get_cmake_generators(no_raise=False):
 	gen_lines = []
 	try:
-		cmake_help_text = execute_process(cmake_command, ('-h',), get_output=True, echo_command=False).decode()
+		cmake_help_text = execute_process(OPTIONS.cmake_command, ('-h',), check_output=True, echo_command=False).decode()
 		g = False 
 		for line in cmake_help_text.splitlines():
 			line_s = line.strip()
@@ -357,11 +359,11 @@ def fuzzy_match(words, word):
 		return c
 	return None
 
-def map_cmake_generator(cmake_command, gen):
+def map_cmake_generator(gen):
 	gen = gen.strip()
 	if not gen:
 		return ''
-	gens = get_cmake_generators(cmake_command)
+	gens = get_cmake_generators()
 	expand_gens = []
 	for g, choices, _ in gens:
 		expand_gens.append(g)
@@ -544,7 +546,7 @@ def subcommand_cmake(options, unknown_args):
 	build_dir = get_build_directory()
 	cmake_args = ['-H' + source_dir, '-B' + build_dir]
 	if options.G != None:
-		g = map_cmake_generator(OPTIONS.cmake_command, options.G)
+		g = map_cmake_generator(options.G)
 		if options.force:
 			gen = find_cmake_generator(allow_no_cmakecache=True)
 			if gen and g != gen:
@@ -691,7 +693,7 @@ def subcommand_help(options, unknown_args):
 			raise XCMakeError('No subcommand \'%s\''%(options.subcommand))
 		subparser.print_help()
 	elif options.G:	
-		gens = get_cmake_generators(OPTIONS.cmake_command)
+		gens = get_cmake_generators()
 		idx = 0
 		for gen, choices, gen_help in gens:
 			idx += 1
