@@ -8,5 +8,5 @@ if(WIN32)
 	install(PROGRAMS xcmake.bat DESTINATION bin)
 endif()
 
-install(FILES XCMake.cmake DESTINATION bin)
+install(FILES XCMake.cmake DESTINATION cmake)
 

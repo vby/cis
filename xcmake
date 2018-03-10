@@ -13,7 +13,7 @@ import traceback
 CMAKELISTS = 'CMakeLists.txt'
 CMAKECACHE = 'CMakeCache.txt'
 XCMAKE_NAME = 'XCMake'
-XCMAKE_VERSION='1.1.0'
+XCMAKE_VERSION='1.2.0'
 XCMAKE_PROG = os.path.basename(sys.argv[0])
 XCMAKE_COMMAND = os.path.abspath(sys.argv[0])
 XCMAKE_DESCRIPTION = 'XCMake - CMake command-line helper'
@@ -558,10 +558,9 @@ def subcommand_build(options, unknown_args):
 	call_subcommand_cmake_optional()
 
 	cmake_args = ['--build', get_build_directory()]
-	if options:
-		if options.target:
-			cmake_args.extend(('--target', options.target))
-		extend_build_nontarget_arguments(cmake_args, options)
+	if options.target:
+		cmake_args.extend(('--target', options.target))
+	extend_build_nontarget_arguments(cmake_args, options)
 
 	if unknown_args:
 		unknown_args.insert(0, '--')
