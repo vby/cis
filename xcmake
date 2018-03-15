@@ -388,7 +388,7 @@ def map_cmake_generator(gen):
 def call_subcommand_cmake_optional():
 	sep_args = get_separated_arguments('cmake')
 	if sep_args != None or not is_cmakecache_exists():
-		call_subcommand('cmake', sep_args)
+		call_subcommand('cmake')
 
 def is_single_cfg_generator(gen=None, default=True):
 	if not gen:
@@ -641,6 +641,9 @@ def subcommand_status(options, unknown_args):
 				toolset = find_cmakecache_entry(name + '_TOOLSET')
 				print_c('%s = %s (PLATFORM=%s, TOOLSET=%s)'%(name, value or '', platform or '', toolset or '')) 
 			else:
+				print_c('%s = %s'%(name, value or '')) 
+		for name, (value, vtype) in find_cmakecache_entry().items():
+			if name.startswith('CMAKE_') and name.endswith('_COMPILER'):
 				print_c('%s = %s'%(name, value or '')) 
 
 def subcommand_show(options, unknown_args):
