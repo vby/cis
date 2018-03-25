@@ -104,11 +104,11 @@ def print_c(text, end='\n', file=sys.stdout, flush=False, attrs=None):
 	if flush:
 		file.flush()
 
-class ArgumentSubparsers(dict):
-	def __init__(self, parent, **kw):
+class ArgumentParserGroup(dict):
+	def __init__(self, parent, subparsers):
 		dict.__init__(self)
 		self.parent = parent
-		self._subparsers = argparse.ArgumentParser.add_subparsers(parent, **kw)
+		self._subparsers = subparsers
 	
 	def add_parser(self, name, **kw):
 		parser = self._subparsers.add_parser(name, **kw)
@@ -120,9 +120,9 @@ class ArgumentSubparsers(dict):
 class ArgumentParser(argparse.ArgumentParser):
 	def __init__(self, **kw):
 		argparse.ArgumentParser.__init__(self, **kw)
-		self._subparsers_list = []
+		self._subparser_groups = []
 
-	def parse_known_args(self, args=None, namespace=None, seps=None):
+	def parse_known_args_seps(self, args=None, namespace=None, seps=None):
 		if args == None:
 			args = sys.argv
 		if seps == None:
@@ -142,21 +142,21 @@ class ArgumentParser(argparse.ArgumentParser):
 				else:
 					xargs.append(arg)
 			args = xargs
-		options, args = argparse.ArgumentParser.parse_known_args(self, args, namespace)
+		options, args = self.parse_known_args(args, namespace)
 		for sep in seps:
 			setattr(options, 'sep' + sep.replace('-', '_'), sep_args.get(sep))
 		return options, args
 
-	def add_subparsers(self, **kw):
-		subparsers = ArgumentSubparsers(self, **kw) 
-		self._subparsers_list.append(subparsers)
-		return subparsers
+	def add_subparser_group(self, **kw):
+		subparser_group = ArgumentParserGroup(self, self.add_subparsers(**kw))
+		self._subparser_groups.append(subparser_group)
+		return subparser_group
 
-	def get_subparsers_list(self):
-		return self._subparsers_list
+	def get_subparser_groups(self):
+		return self._subparser_groups
 
-	def get_subparsers(self):
-		return self._subparsers_list[0] if self._subparsers_list else None
+	def get_subparser_group(self, idx=0):
+		return self._subparser_groups[idx] if idx < len(self._subparser_groups) else None
 
 	def error(self, message):
 		print_c('%s: %s\nSpecify --help or -h for usage'%(self.prog, message), file=sys.stderr)
@@ -185,7 +185,7 @@ def call_subcommand(name, args=None):
 	sep_args = get_separated_arguments(name)
 	if sep_args:
 		args.extend(sep_args)
-	parser = ARG_PARSER.get_subparsers()[name]
+	parser = ARG_PARSER.get_subparser_group()[name]
 	options, unknown_args = parser.parse_known_args(args)
 	options.d_func(options, unknown_args)
 	
@@ -690,7 +690,7 @@ def subcommand_show(options, unknown_args):
 
 def subcommand_help(options, unknown_args):
 	if options.subcommand:
-		subparser = ARG_PARSER.get_subparsers().get(options.subcommand)
+		subparser = ARG_PARSER.get_subparser_group().get(options.subcommand)
 		if not subparser:
 			raise XCMakeError('No subcommand \'%s\''%(options.subcommand))
 		subparser.print_help()
@@ -704,29 +704,29 @@ def subcommand_help(options, unknown_args):
 		ARG_PARSER.print_help()
 		return
 
-def add_subparser(subparsers, name, **kw):
-	parser = subparsers.add_parser(name, **kw)
+def add_subparser(subparser_group, name, **kw):
+	parser = subparser_group.add_parser(name, **kw)
 	func = get_subcommand_func(name)
 	parser.set_defaults(d_subcommand=name, d_parser=parser, d_func=func)
 	return parser
 
-def add_init_parser(subparsers):
-	parser = add_subparser(subparsers, 'init', help='Init a %s template'%(CMAKELISTS))
+def add_init_parser(subparser_group):
+	parser = add_subparser(subparser_group, 'init', help='Init a %s template'%(CMAKELISTS))
 
-def add_cmake_parser(subparsers):
-	parser = add_subparser(subparsers, 'cmake', help='Run cmake')
+def add_cmake_parser(subparser_group):
+	parser = add_subparser(subparser_group, 'cmake', help='Run cmake')
 	parser.add_argument('-G', metavar='<generator>', help='Specify a build system generator, can be the number of %s help -G'%(XCMAKE_PROG))
 	parser.add_argument('-f', '--force', action='store_true', help='Clean cache first if specify a difference generator')
 
-def add_build_parser(subparsers, parser=None):
+def add_build_parser(subparser_group, parser=None):
 	if not parser:
-		parser = add_subparser(subparsers, 'build', help='Run cmake --build')
+		parser = add_subparser(subparser_group, 'build', help='Run cmake --build')
 	parser.add_argument('--target', metavar='<target>', help='Build <target> instead of default targets')
 	parser.add_argument('--config', metavar='<config>', help='For multi-configuration tools, choose <config>')
 	parser.add_argument('--clean', '--clean-first', action='store_true', help='Build target \'clean\' first, then build')
 
-def add_make_parser(subparsers):
-	parser = add_subparser(subparsers, 'make', prefix_chars='-+', help='Run cmake --build with make interface')
+def add_make_parser(subparser_group):
+	parser = add_subparser(subparser_group, 'make', prefix_chars='-+', help='Run cmake --build with make interface')
 	parser.add_argument('targets', nargs='*', help='Targets to make')
 	parser.add_argument('-C', '--directory', metavar='<directory>', action=PathAction, dest='make_directory', help='Change to <directory> before doing anything')
 	parser.add_argument('-j', '--jobs', metavar='<n>', type=int, nargs='?', default=-1, help='Allow <n> jobs at once; infinite jobs with no arg')
@@ -737,45 +737,45 @@ def add_make_parser(subparsers):
 	parser.add_argument('-v', '--version', action='store_true', help='Print the version number of native build and exit')
 	parser.add_argument('+h', '++help', action='store_true', help='Print native build help message and exit')
 	group = parser.add_argument_group(title='build arguments')
-	add_build_parser(subparsers, group)
+	add_build_parser(subparser_group, group)
 	
-def add_test_parser(subparsers):
-	parser = add_subparser(subparsers, 'test', help='Run ctest')
+def add_test_parser(subparser_group):
+	parser = add_subparser(subparser_group, 'test', help='Run ctest')
 	parser.add_argument('-C', '--build-config', metavar='<config>', help='Choose configuration to test')
 
-def add_clean_parser(subparsers):
-	parser = add_subparser(subparsers, 'clean', help='Clean cmake cache files')
+def add_clean_parser(subparser_group):
+	parser = add_subparser(subparser_group, 'clean', help='Clean cmake cache files')
 	parser.add_argument('-a', '--all', action='store_true', help='Remove the <build-dir>')
 	parser.add_argument('-t', '--target', action='store_true', help='Same as %s build --target clean'%(XCMAKE_PROG))
 
-def add_status_parser(subparsers):
-	parser = add_subparser(subparsers, 'status', help='Show the working tree status')
+def add_status_parser(subparser_group):
+	parser = add_subparser(subparser_group, 'status', help='Show the working tree status')
 
-def add_show_parser(subparsers):
-	parser = add_subparser(subparsers, 'show', help='Show cmake cache entries')
+def add_show_parser(subparser_group):
+	parser = add_subparser(subparser_group, 'show', help='Show cmake cache entries')
 	parser.add_argument('-N', '--name', metavar='<name>', help='Show cache entry named <name>')
 	parser.add_argument('--internal', action='store_true', help='Only show cache entries with type INTERNAL')
 	parser.add_argument('--external', action='store_true', help='Only show cache entries with non INTERNAL type')
 	parser.add_argument('--cmake', action='store_true', help='Only show cache entries with "CMAKE_" prefix')
 	parser.add_argument('--non-cmake', action='store_true', help='Only show cache entries with non "CMAKE_" prefix')
 
-def add_help_parser(subparsers):
-	parser = add_subparser(subparsers, 'help', help='Show help information')
+def add_help_parser(subparser_group):
+	parser = add_subparser(subparser_group, 'help', help='Show help information')
 	parser.add_argument('subcommand', metavar='<subcommand>', nargs='?', help='Same as %s <subcommand> -h'%(XCMAKE_PROG))
 	parser.add_argument('-G', action='store_true', help='Show cmake available generators')
 
-def add_subparsers(parser):
-	subparsers = parser.add_subparsers(title='subcommands')
+def add_subparser_group(parser):
+	subparser_group = parser.add_subparser_group(title='subcommands')
 
-	add_init_parser(subparsers)
-	add_cmake_parser(subparsers)
-	add_build_parser(subparsers)
-	add_make_parser(subparsers)
-	add_test_parser(subparsers)
-	add_clean_parser(subparsers)
-	add_status_parser(subparsers)
-	add_show_parser(subparsers)
-	add_help_parser(subparsers)
+	add_init_parser(subparser_group)
+	add_cmake_parser(subparser_group)
+	add_build_parser(subparser_group)
+	add_make_parser(subparser_group)
+	add_test_parser(subparser_group)
+	add_clean_parser(subparser_group)
+	add_status_parser(subparser_group)
+	add_show_parser(subparser_group)
+	add_help_parser(subparser_group)
 
 def build_argument_parser():
 	parser = ArgumentParser(prog=XCMAKE_PROG, 
@@ -791,7 +791,7 @@ def build_argument_parser():
 	parser.add_argument('--ctest-command', metavar='<ctest-command>', action=PathOrNameAction, default=DEFAULT_CTEST_COMMAND, help='Default \'%s\''%(DEFAULT_CTEST_COMMAND))
 	parser.add_argument('-v', '--version', action='version', version=XCMAKE_VERSION_STRING, help='Print the version number of xcmake and exit')
 
-	add_subparsers(parser)
+	add_subparser_group(parser)
 
 	return parser
 
@@ -805,7 +805,7 @@ def main():
 		return
 
 	global OPTIONS
-	options, unknown_args = ARG_PARSER.parse_known_args(args)
+	options, unknown_args = ARG_PARSER.parse_known_args_seps(args)
 	OPTIONS = options
 
 	if not options or not options.d_func:
