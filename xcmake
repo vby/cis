@@ -786,7 +786,7 @@ def build_argument_parser():
 	parser.set_defaults(d_func=None)
 
 	parser.add_argument('-C', '--directory', metavar='<directory>', action=PathAction, help='Change to <directory> before doing anything')
-	parser.add_argument('--build-dir', metavar='<build-dir>', default=DEFAULT_BUILD_DIR, help='Default \'%s\''%(DEFAULT_BUILD_DIR))
+	parser.add_argument('-B', '--build-dir', metavar='<build-dir>', default=DEFAULT_BUILD_DIR, help='Default \'%s\''%(DEFAULT_BUILD_DIR))
 	parser.add_argument('--cmake-command', metavar='<cmake-command>', action=PathOrNameAction, default=DEFAULT_CMAKE_COMMAND, help='Default \'%s\''%(DEFAULT_CMAKE_COMMAND))
 	parser.add_argument('--ctest-command', metavar='<ctest-command>', action=PathOrNameAction, default=DEFAULT_CTEST_COMMAND, help='Default \'%s\''%(DEFAULT_CTEST_COMMAND))
 	parser.add_argument('-v', '--version', action='version', version=XCMAKE_VERSION_STRING, help='Print the version number of xcmake and exit')
