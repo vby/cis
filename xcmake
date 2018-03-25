@@ -187,7 +187,7 @@ def call_subcommand(name, args=None):
 		args.extend(sep_args)
 	parser = ARG_PARSER.get_subparser_group()[name]
 	options, unknown_args = parser.parse_known_args(args)
-	options.d_func(options, unknown_args)
+	options.subcommand_func(options, unknown_args)
 	
 def find_source_directory(from_dir = None):
 	if not from_dir:
@@ -707,7 +707,7 @@ def subcommand_help(options, unknown_args):
 def add_subparser(subparser_group, name, **kw):
 	parser = subparser_group.add_parser(name, **kw)
 	func = get_subcommand_func(name)
-	parser.set_defaults(d_subcommand=name, d_parser=parser, d_func=func)
+	parser.set_defaults(subcommand_name=name, subparser=parser, subcommand_func=func)
 	return parser
 
 def add_init_parser(subparser_group):
@@ -783,7 +783,6 @@ def build_argument_parser():
 		epilog=XCMAKE_EPILOG,
 		formatter_class=argparse.RawTextHelpFormatter,
 		add_help=True)
-	parser.set_defaults(d_func=None)
 
 	parser.add_argument('-C', '--directory', metavar='<directory>', action=PathAction, help='Change to <directory> before doing anything')
 	parser.add_argument('-B', '--build-dir', metavar='<build-dir>', default=DEFAULT_BUILD_DIR, help='Default \'%s\''%(DEFAULT_BUILD_DIR))
@@ -792,7 +791,6 @@ def build_argument_parser():
 	parser.add_argument('-v', '--version', action='version', version=XCMAKE_VERSION_STRING, help='Print the version number of xcmake and exit')
 
 	add_subparser_group(parser)
-
 	return parser
 
 def main():
@@ -808,7 +806,7 @@ def main():
 	options, unknown_args = ARG_PARSER.parse_known_args_seps(args)
 	OPTIONS = options
 
-	if not options or not options.d_func:
+	if not options:
 		ARG_PARSER.print_help()
 	else:
 		if OPTIONS.directory:
@@ -816,10 +814,10 @@ def main():
 		pass_args = get_separated_arguments()
 		if pass_args:
 			unknown_args.extend(pass_args)
-		pass_args = get_separated_arguments(options.d_subcommand)
+		pass_args = get_separated_arguments(options.subcommand_name)
 		if pass_args:
 			unknown_args.extend(pass_args)
-		options.d_func(options, unknown_args)
+		options.subcommand_func(options, unknown_args)
 
 if __name__ == '__main__':
 	try:
