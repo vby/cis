@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.3 FATAL_ERROR)
 include(CMakeParseArguments)
 include(ExternalProject)
 
-macro(_XCMake_Append_Option args prefix name default_val)
+macro(_xcm_Append_Option args prefix name default_val)
 	if(NOT "${prefix}_${name}")
 		list(APPEND args "${name}" "${default_val}")
 	else()
@@ -11,7 +11,7 @@ macro(_XCMake_Append_Option args prefix name default_val)
 	endif()
 endmacro()
 
-function(_XCMake_External_Boot source_dir_var name ep_base args)
+function(_xcm_External_Boot source_dir_var name ep_base args)
 	set(source_dir "${ep_base}/Boot/${name}")
 	set(ep_add_args_str "")
 	set(key TRUE)
@@ -35,7 +35,7 @@ ${ep_add_args_str}\t)
 	set(${source_dir_var} ${source_dir} PARENT_SCOPE)
 endfunction()
 
-# XCMake_Find_Libraries(
+# xcm_Find_Libraries(
 #		<VAR>
 #		PATHS path1 [path2 ...]
 #		[PATH_SUFFIXES suffix1 [suffix2 ...]]
@@ -49,7 +49,7 @@ endfunction()
 #		[NO_RIGHT_NAME_PATH_SUFFIXES]
 #		[NO_LEFT_RIGHT_NAME_PATH_SUFFIXES]
 #		)
-function(XCMake_Find_Libraries locations_var)
+function(xcm_Find_Libraries locations_var)
 	set(opt_args 
 			NO_DEFAULT_PATH_SUFFIXES 
 			NO_PATH_ROOT
@@ -115,8 +115,8 @@ function(XCMake_Find_Libraries locations_var)
 	set(${locations_var} ${locations} PARENT_SCOPE)
 endfunction()
 
-# XCMake_Traits_Library(<VAR> <path>)
-function(XCMake_Traits_Library var path)
+# xcm_Traits_Library(<VAR> <path>)
+function(xcm_Traits_Library var path)
 	get_filename_component(filename ${path} NAME)
 	get_filename_component(filename_ext ${filename} EXT)
 	if("${filename_ext}" STREQUAL ".a")
@@ -143,14 +143,14 @@ function(XCMake_Traits_Library var path)
 	set("${var}_TYPES" "${types}" PARENT_SCOPE)
 endfunction()
 
-# XCMake_Import_Library(
+# xcm_Import_Library(
 #		<name> 
 #		<SHARED|STATIC|INTERFACE|OBJECT|MODULE|UNKNOWN> 
 #		[LOCATION location]
 #		[INCLUDE_DIRECTORIES inc_dir1 [inc_dir2 ...]]
 #		[NO_GLOBAL]
 #		)
-function(XCMake_Import_Library name type)
+function(xcm_Import_Library name type)
 	cmake_parse_arguments(arg "NO_GLOBAL" "LOCATION" "INCLUDE_DIRECTORIES" ${ARGN})
 	if(${arg_NO_GLOBAL})
 		add_library("${name}" ${type} IMPORTED)
@@ -165,7 +165,7 @@ function(XCMake_Import_Library name type)
 	endif()
 endfunction()
 
-function(_XCMake_External_Import_Library namespace name type)
+function(_xcm_External_Import_Library namespace name type)
 	cmake_parse_arguments(arg "" "LOCATION" "INCLUDE_DIRECTORIES" ${ARGN})
 	if("${name}" STREQUAL "")
 		set(target "${namespace}-${type}")
@@ -181,10 +181,10 @@ function(_XCMake_External_Import_Library namespace name type)
 		message(STATUS "* ${target}: ${location}")
 		return()
 	endif()
-	XCMake_Import_Library("${target}" "${type}" ${ARGN})
-	set_property(GLOBAL APPEND PROPERTY XCMake_External_Library_Targets "${target}")
-	set_property(GLOBAL PROPERTY "XCMake_External_Target_${target}_Namespace" "${namespace}")
-	set_property(GLOBAL PROPERTY "XCMake_External_Target_${target}_Name" "${name}")
+	xcm_Import_Library("${target}" "${type}" ${ARGN})
+	set_property(GLOBAL APPEND PROPERTY xcm_External_Library_Targets "${target}")
+	set_property(GLOBAL PROPERTY "xcm_External_Target_${target}_Namespace" "${namespace}")
+	set_property(GLOBAL PROPERTY "xcm_External_Target_${target}_Name" "${name}")
 	if(DEFINED arg_LOCATION)
 		message(STATUS "Import ${target}: ${arg_LOCATION}")
 	else()
@@ -192,28 +192,28 @@ function(_XCMake_External_Import_Library namespace name type)
 	endif()
 endfunction()
 
-# XCMake_External_Import_Libraries(
+# xcm_External_Import_Libraries(
 #		<path>
 #		<name>
-#		[... pass to XCMake_Find_Libraries]
+#		[... pass to xcm_Find_Libraries]
 #		)
-function(XCMake_External_Import_Libraries path name)
-	XCMake_Find_Libraries(locations PATHS "${path}" NAME "${name}" ${ARGN})
+function(xcm_External_Import_Libraries path name)
+	xcm_Find_Libraries(locations PATHS "${path}" NAME "${name}" ${ARGN})
 	if(EXISTS "${path}/include")
 		set(inc_dirs "${path}/include")
 	endif()
 	foreach(location ${locations})
-		XCMake_Traits_Library(lib "${location}")
+		xcm_Traits_Library(lib "${location}")
 		foreach(type ${lib_TYPES})
-			_XCMake_External_Import_Library("${name}" "${lib_NAME}" "${type}" 
+			_xcm_External_Import_Library("${name}" "${lib_NAME}" "${type}" 
 					LOCATION "${location}" INCLUDE_DIRECTORIES ${inc_dirs})
 		endforeach()
 	endforeach()
-	_XCMake_External_Import_Library("${name}" "" INTERFACE
+	_xcm_External_Import_Library("${name}" "" INTERFACE
 			INCLUDE_DIRECTORIES ${inc_dirs})
 endfunction()
 
-function(XCMake_Build_CMake_Project name source_dir binary_dir)
+function(xcm_Build_CMake_Project name source_dir binary_dir)
 	execute_process(
 			COMMAND ${CMAKE_COMMAND} "${source_dir}"
 			WORKING_DIRECTORY "${binary_dir}"
@@ -236,30 +236,30 @@ function(XCMake_Build_CMake_Project name source_dir binary_dir)
 	endif()
 endfunction()
 
-# XCMake_External_Add => ExternalProject_Add
-function(XCMake_External_Add name)
+# xcm_External_Add => ExternalProject_Add
+function(xcm_External_Add name)
 	set(sargs GIT_SHALLOW GIT_PROGRESS LOG_DOWNLOAD UPDATE_DISCONNECTED)
 	set(margs LIBRARY)
 	cmake_parse_arguments(arg "" "${sargs}" "${margs}" ${ARGN})
 
 	set(args ${arg_UNPARSED_ARGUMENTS})
-	_XCMake_Append_Option(args arg GIT_SHALLOW TRUE)
-	_XCMake_Append_Option(args arg GIT_PROGRESS TRUE)
-	_XCMake_Append_Option(args arg LOG_DOWNLOAD TRUE)
-	_XCMake_Append_Option(args arg UPDATE_DISCONNECTED TRUE)
+	_xcm_Append_Option(args arg GIT_SHALLOW TRUE)
+	_xcm_Append_Option(args arg GIT_PROGRESS TRUE)
+	_xcm_Append_Option(args arg LOG_DOWNLOAD TRUE)
+	_xcm_Append_Option(args arg UPDATE_DISCONNECTED TRUE)
 
 	set(ep_base "${CMAKE_BINARY_DIR}/external")
 	set(install_path "${ep_base}/Install/${name}")
 	list(APPEND args CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=${install_path}")
 
-	_XCMake_External_Boot(source_dir "${name}" "${ep_base}" "${args}")
+	_xcm_External_Boot(source_dir "${name}" "${ep_base}" "${args}")
 	message(STATUS "Building ${name}: ${ep_base}/Source/${name}")
-	XCMake_Build_CMake_Project("${name}" "${source_dir}" "${source_dir}")
+	xcm_Build_CMake_Project("${name}" "${source_dir}" "${source_dir}")
 	message(STATUS "Building ${name} done")
-	XCMake_External_Import_Libraries("${install_path}" "${name}")
+	xcm_External_Import_Libraries("${install_path}" "${name}")
 endfunction()
 
-# XCMake_External_Get_Libraries(
+# xcm_External_Get_Libraries(
 #		<VAR> 
 #		[STATIC|SHARED|INTERFACE|MODULE ...]
 #		[NAMESPACES ns1 [ns2 ...]]
@@ -267,7 +267,7 @@ endfunction()
 #		[NAMES ns1::name1 [ns2::name2 ...]]
 #		[EXCLUDE_NAMES ns1::name1 [ns2::name2 ...]]
 #		)
-function(XCMake_External_Get_Libraries libs_var)
+function(xcm_External_Get_Libraries libs_var)
 	set(opt_args STATIC SHARED INTERFACE)
 	set(m_args NAMESPACES EXCLUDE_NAMESPACES NAMES EXCLUDE_NAMES)
 	cmake_parse_arguments(arg "${opt_args}" "" "${m_args}" ${ARGN})
@@ -295,7 +295,7 @@ function(XCMake_External_Get_Libraries libs_var)
 		list(REMOVE_DUPLICATES names_namespaces)
 	endif()
 
-	get_property(targets GLOBAL PROPERTY XCMake_External_Library_Targets)
+	get_property(targets GLOBAL PROPERTY xcm_External_Library_Targets)
 	foreach(target ${targets})
 		if(NOT ("${types}" STREQUAL ""))
 			get_property(type TARGET "${target}" PROPERTY TYPE)
@@ -304,8 +304,8 @@ function(XCMake_External_Get_Libraries libs_var)
 			endif()
 		endif()
 
-		get_property(ns GLOBAL PROPERTY "XCMake_External_Target_${target}_Namespace")
-		get_property(name GLOBAL PROPERTY "XCMake_External_Target_${target}_Name")
+		get_property(ns GLOBAL PROPERTY "xcm_External_Target_${target}_Namespace")
+		get_property(name GLOBAL PROPERTY "xcm_External_Target_${target}_Name")
 		if("${name}" STREQUAL "")
 			set(ns_name "${ns}")
 		else()
@@ -331,7 +331,7 @@ function(XCMake_External_Get_Libraries libs_var)
 	set("${libs_var}" ${libs} PARENT_SCOPE)
 endfunction()
 
-# XCMake_External_Link_Libraries(
+# xcm_External_Link_Libraries(
 #		<target> 
 #		[STATIC|SHARED|INTERFACE|MODULE ...]
 #		[NAMESPACES ns1 [ns2 ...]]
@@ -339,7 +339,7 @@ endfunction()
 #		[NAMES ns1::name1 [ns2::name2 ...]]
 #		[EXCLUDE_NAMES ns1::name1 [ns2::name2 ...]]
 #		)
-function(XCMake_External_Link_Libraries target)
-	XCMake_External_Get_Libraries(libs ${ARGN})
+function(xcm_External_Link_Libraries target)
+	xcm_External_Get_Libraries(libs ${ARGN})
 	target_link_libraries(${target} ${libs})
 endfunction()
