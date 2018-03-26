@@ -1,0 +1,23 @@
+language: python
+
+os: linux
+dist: trusty
+
+notifications:
+  email: false
+
+python:
+  - '2.7'
+  - '3.5'
+
+before_script:
+  - cd "${TRAVIS_BUILD_DIR}"
+  - git clone https://github.com/google/googletest
+  - cd googletest
+  - git checkout -qf dfa853b63d17c787914b663b50c2095a0c5b706e
+  - cd googletest
+
+script:
+  - ../../xcm make --cmake -Dgtest_build_samples=ON
+  - test -f build/sample1_unittest
+
