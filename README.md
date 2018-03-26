@@ -1,4 +1,4 @@
-# xcm
+# xcm [![Build Status](https://travis-ci.org/vby/xcm.svg?branch=master)](https://travis-ci.org/vby/xcm)
 xcm - high-level interface to the CMake command-line tools.
 
 ## Subcommands
