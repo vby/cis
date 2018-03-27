@@ -690,15 +690,17 @@ def subcommand_help(options, unknown_args):
 		if not subparser:
 			raise MyError('No subcommand \'%s\''%(options.subcommand))
 		subparser.print_help()
-	elif options.G:	
+	elif options.cmake_generators:
 		gens = get_cmake_generators()
 		idx = 0
 		for gen, choices, gen_help in gens:
 			idx += 1
 			print_c('%02d. %s%s'%(idx, gen, ' [%s]'%('|'.join(choices)) if choices else ''))
+	elif options.msbuild:
+		print_c('https://docs.microsoft.com/en-us/visualstudio/msbuild/msbuild-command-line-reference')
+		print_c('Properties: https://docs.microsoft.com/en-us/visualstudio/msbuild/common-msbuild-project-properties')
 	else:
 		ARG_PARSER.print_help()
-		return
 
 def add_subparser(subparser_group, name, **kw):
 	parser = subparser_group.add_parser(name, **kw)
@@ -758,7 +760,8 @@ def add_show_parser(subparser_group):
 def add_help_parser(subparser_group):
 	parser = add_subparser(subparser_group, 'help', help='Show help information')
 	parser.add_argument('subcommand', metavar='<subcommand>', nargs='?', help='Same as \'%s <subcommand> -h\''%(MY_PROG))
-	parser.add_argument('-G', action='store_true', help='Show cmake available generators')
+	parser.add_argument('-G', '--cmake-generators', action='store_true', help='Show available cmake generators')
+	parser.add_argument('-M', '--msbuild', action='store_true', help='Show make properties')
 
 def add_subparser_group(parser):
 	subparser_group = parser.add_subparser_group(title='subcommands')

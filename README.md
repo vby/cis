@@ -10,7 +10,7 @@ xcm - high-level interface to the CMake command-line tools.
 
 * `xcm make` Run cmake --build with make interface
 
-* `xcm ctest` Run ctest
+* `xcm test` Run ctest
 
 * `xcm clean` Clean cmake cache files
 
