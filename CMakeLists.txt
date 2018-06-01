@@ -1,14 +1,10 @@
 cmake_minimum_required(VERSION 2.6)
 
-project(xcm NONE)
+project(cis NONE)
 
-install(PROGRAMS xcm DESTINATION bin)
+install(PROGRAMS cis DESTINATION bin)
 
 if(WIN32)
-	install(PROGRAMS xcm.bat DESTINATION bin)
-	install(FILES xcm.cmake DESTINATION cmake)
-else()
-	install(FILES xcm.cmake DESTINATION share/xcm/cmake)
+	install(PROGRAMS cis.bat DESTINATION bin)
 endif()
-
 

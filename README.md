@@ -1,26 +1,26 @@
-# xcm [![Build Status](https://travis-ci.org/vby/xcm.svg?branch=master)](https://travis-ci.org/vby/xcm)
-xcm - high-level interface to the CMake command-line tools.
+# cis [![Build Status](https://travis-ci.org/vby/cis.svg?branch=master)](https://travis-ci.org/vby/cis)
+cis - high-level interface to the CMake command-line tools.
 
 ## Subcommands
-* `xcm init` Init a CMakeLists.txt template
+* `cis init` Init a CMakeLists.txt template
 
-* `xcm cmake` Run cmake
+* `cis cmake` Run cmake
 
-* `xcm build` Run cmake --build
+* `cis build` Run cmake --build
 
-* `xcm make` Run cmake --build with make interface
+* `cis make` Run cmake --build with make interface
 
-* `xcm test` Run ctest
+* `cis test` Run ctest
 
-* `xcm clean` Clean cmake cache files
+* `cis clean` Clean cmake cache files
 
-* `xcm status` Show the working tree status
+* `cis status` Show the working tree status
 
-* `xcm show` Show cmake cache entries
+* `cis show` Show cmake cache entries
 
-* `xcm help` Show help information
+* `cis help` Show help information
 
-See `xcm help <command>` to read about a specific subcommand.
+See `cis help <command>` to read about a specific subcommand.
 
 ## License
 MIT

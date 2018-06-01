@@ -18,6 +18,6 @@ before_script:
   - cd googletest
 
 script:
-  - ../../xcm make --cmake -Dgtest_build_samples=ON
+  - ../../cis make --cmake -Dgtest_build_samples=ON
   - test -f build/sample1_unittest
 
