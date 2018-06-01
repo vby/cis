@@ -342,7 +342,8 @@ class Command:
 	ALLOW_UNKNOWN_ARGS = False
 
 	def __init__(self, options, unknown_args=()):
-		self.argparser = CIS.get_argparser().get_subparsers().get_parser(options.command)
+		self.command = self.__class__.__name__[:-7].lower()
+		self.argparser = CIS.get_argparser().get_subparsers().get_parser(self.command)
 		if not self.ALLOW_UNKNOWN_ARGS and unknown_args:	
 			raise ArgumentError('unrecognized arguments: %s'%(' '.join(unknown_args)), self.argparser)
 		self.options = options
