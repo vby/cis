@@ -154,7 +154,6 @@ class ArgumentSubparsers:
 	
 	def add_parser(self, name, *args, **kw):
 		parser = self._argsubparsers.add_parser(name, *args, **kw)
-		#parser.set_defaults(argparser=parser)
 		self._subparsers[name] = parser
 		return parser
 
@@ -167,9 +166,6 @@ class ArgumentParser(argparse.ArgumentParser):
 		self.name = args[0] if args else kw.get('name')
 		self._all_subparsers = []
 		self._all_subargs = {}
-
-	#def __getattr__(self, name):
-	#	return getattr(self._argparser, name)
 
 	def __repr__(self):
 		return 'ArgumentParser(name=%s, prog=%s)'%(self.name, self.prog)
@@ -190,9 +186,12 @@ class ArgumentParser(argparse.ArgumentParser):
 	def get_subparsers(self, idx=0):
 		return self._all_subparsers[idx] if idx >= 0 and idx < len(self._all_subparsers) else None
 
+	def _do_parse_known_args(self, args, namespace):
+		return argparse.ArgumentParser.parse_known_args(self, args, namespace)
+
 	def parse_known_args(self, args=None, namespace=None):
 		if not self._all_subargs:
-			return argparse.ArgumentParser.parse_known_args(self, args, namespace) 
+			return self._do_parse_known_args(args, namespace)
 		if args == None:
 			args = sys.argv
 		subargs = {}
@@ -210,7 +209,7 @@ class ArgumentParser(argparse.ArgumentParser):
 				else:
 					xargs.append(arg)
 			args = xargs
-		options, args = argparse.ArgumentParser.parse_known_args(self, args, namespace)
+		options, args = self._do_parse_known_args(args, namespace)
 		for arg in subargs:
 			dest = self._all_subargs[arg]
 			sargs = getattr(options, dest, None)
@@ -275,6 +274,7 @@ class MakeArgs:
 	Version = 6
 
 class Builder:
+	make_args = {}
 	MULTI_CONFIG = False
 
 	@classmethod
@@ -522,7 +522,7 @@ class CleanCommand(Command):
 				raise CISError('The build directory "%s" contains %s.'%(binary_dir, CMAKELISTS))
 			CIS.call_cmake(('-E', 'remove_directory', binary_dir))
 		elif self.options.target:
-			CIS.call_command('build', ['--target', 'clean'] + unknown_args)
+			CIS.call_command('build', ['--target', 'clean'] + self.unknown_args)
 		else:
 			CIS.remove_cmakecache()
 	
@@ -623,6 +623,18 @@ class HelpCommand(Command):
 
 class CIS:
 	@classmethod
+	def add_common_arguments(cls, parser):
+		parser = parser.add_argument_group(title='Common options')
+		parser.add_argument('-C', '--directory', metavar='<directory>', action=PathAction, help='Change to <directory> before doing anything')
+		parser.add_argument('-B', '--binary-dir', metavar='<binary-dir>', default=CIS_BINARY_DIR, help='Default \'%s\', relative to the source directory'%(CIS_BINARY_DIR))
+		parser.add_argument('--cmake-command', metavar='<cmake-command>', action=PathOrNameAction, default=CIS_CMAKE_COMMAND, help='Default \'%s\''%(CIS_CMAKE_COMMAND))
+		parser.add_argument('--ctest-command', metavar='<ctest-command>', action=PathOrNameAction, default=CIS_CTEST_COMMAND, help='Default \'%s\''%(CIS_CTEST_COMMAND))
+		parser.add_argument('-v', '--version', action='version',
+				version='%%(prog)s version %s\n\n%s maintained and supported by vby(Github.com/vby).\n'%(CIS_VERSION, CIS_NAME),
+				help='Print the version number of %s and exit'%(CIS_PROG))
+		parser.add_argument('-h', '--help', action='help', help='Show this help message and exit')
+
+	@classmethod
 	def add_init_parser(cls, subparsers):
 		parser = subparsers.add_parser('init', help='Init a %s template'%(CMAKELISTS))
 	
@@ -698,19 +710,10 @@ class CIS:
 		parser = ArgumentParser(prog=CIS_PROG, 
 			description=CIS_DESCRIPTION,
 			epilog='See \'%s help <command>\' to read about a specific subcommand.'%(CIS_PROG),
-			formatter_class=argparse.RawTextHelpFormatter,
-			add_help=True)
-	
-		parser.add_argument('-C', '--directory', metavar='<directory>', action=PathAction, help='Change to <directory> before doing anything')
-		parser.add_argument('-B', '--binary-dir', metavar='<binary-dir>', default=CIS_BINARY_DIR, help='Default \'%s\', relative to the source directory'%(CIS_BINARY_DIR))
-		parser.add_argument('--cmake-command', metavar='<cmake-command>', action=PathOrNameAction, default=CIS_CMAKE_COMMAND, help='Default \'%s\''%(CIS_CMAKE_COMMAND))
-		parser.add_argument('--ctest-command', metavar='<ctest-command>', action=PathOrNameAction, default=CIS_CTEST_COMMAND, help='Default \'%s\''%(CIS_CTEST_COMMAND))
-		parser.add_argument('-v', '--version', action='version',
-				version='%%(prog)s version %s\n\n%s maintained and supported by vby(Github.com/vby).\n'%(CIS_VERSION, CIS_NAME),
-				help='Print the version number of %s and exit'%(CIS_PROG))
-	
+			add_help=False)
+		cls.add_common_arguments(parser)
+
 		subparsers = parser.add_subparsers(title='Commands', metavar='<command>', dest='command')
-	
 		cls.add_init_parser(subparsers)
 		cls.add_cmake_parser(subparsers)
 		cls.add_build_parser(subparsers)
